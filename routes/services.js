@@ -11,9 +11,11 @@ router.get('/', async (req, res) => {
     
     // Only filter by home_id if it's provided and valid
     if (home_id && home_id !== 'undefined' && home_id !== 'null') {
-      filter.home_ids = home_id;
+      // Use $in to check if the home_id is in the home_ids array
+      filter.home_ids = { $in: [home_id] };
     }
     
+    // Always populate home_ids with full home details for frontend filtering
     const services = await Service.find(filter).populate('home_ids', 'name location.city');
     res.json(services);
   } catch (error) {
@@ -60,7 +62,7 @@ router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
     
     res.json(service);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update service' });
+    res.status(400).json({ error: 'Failed to update service', details: error.message });
   }
 });
 

@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const shiftSchema = new mongoose.Schema({
+  home_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Home',
+    required: [true, 'Home ID is required']
+  },
   service_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Service',
@@ -87,6 +92,7 @@ const shiftSchema = new mongoose.Schema({
 });
 
 // Indexes for performance
+shiftSchema.index({ home_id: 1 });
 shiftSchema.index({ service_id: 1 });
 shiftSchema.index({ date: 1 });
 shiftSchema.index({ 'assigned_staff.user_id': 1 });
@@ -122,6 +128,7 @@ shiftSchema.virtual('status').get(function() {
 shiftSchema.virtual('publicInfo').get(function() {
   return {
     id: this._id,
+    home_id: this.home_id,
     service_id: this.service_id,
     date: this.date,
     start_time: this.start_time,
