@@ -1,0 +1,18 @@
+Name,Email,Role,Password,Phone
+John Support,john_support@rcs.com,support_worker,passWord123,+44123456789
+Sarah Support,sarah_support@rcs.com,support_worker,passWord123,+44123456789
+Mike Support,mike_support@rcs.com,support_worker,passWord123,+44123456789
+Emma Support,emma_support@rcs.com,support_worker,passWord123,+44123456789
+David Support,david_support@rcs.com,support_worker,passWord123,+44123456789
+Lisa Support,lisa_support@rcs.com,support_worker,passWord123,+44123456789
+Tom Support,tom_support@rcs.com,support_worker,passWord123,+44123456789
+Anna Support,anna_support@rcs.com,support_worker,passWord123,+44123456789
+James Support,james_support@rcs.com,support_worker,passWord123,+44123456789
+Maria Support,maria_support@rcs.com,support_worker,passWord123,+44123456789
+John Senior,john_senior@rcs.com,senior_staff,passWord123,+44123456789
+Sarah Senior,sarah_senior@rcs.com,senior_staff,passWord123,+44123456789
+Mike Senior,mike_senior@rcs.com,senior_staff,passWord123,+44123456789
+Emma Senior,emma_senior@rcs.com,senior_staff,passWord123,+44123456789
+David Senior,david_senior@rcs.com,senior_staff,passWord123,+44123456789
+John Manager,john_manager@rcs.com,home_manager,passWord123,+44123456789
+John Admin,john_admin@rcs.com,admin,passWord123,+44123456789
