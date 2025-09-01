@@ -40,7 +40,7 @@ router.get('/:id', async (req, res) => {
 // Create new availability
 router.post('/', async (req, res) => {
   try {
-    console.log('📝 Creating availability with data:', req.body);
+
     
     // Check if there's already an availability record for this user and date
     const existingAvailability = await Availability.findOne({
@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
     });
     
     if (existingAvailability) {
-      console.log('🔄 Found existing availability, updating instead of creating');
+      
       
       // Update the existing record with the new data
       const updatedAvailability = await Availability.findByIdAndUpdate(
@@ -58,13 +58,13 @@ router.post('/', async (req, res) => {
         { new: true, runValidators: true }
       );
       
-      console.log('✅ Availability updated successfully:', updatedAvailability);
+      
       res.json(updatedAvailability);
     } else {
       // Create new availability record
       const availability = new Availability(req.body);
       await availability.save();
-      console.log('✅ Availability created successfully:', availability);
+      
       res.status(201).json(availability);
     }
   } catch (error) {

@@ -13,7 +13,44 @@ A comprehensive Node.js backend for the MyRotaPro rota management system, design
 - **Time Off Management**: Request approval workflow
 - **Real-time Validation**: Overlap detection and constraint checking
 
-## 🏗️ Architecture
+## 🔄 Recent Schema Updates
+
+### User Model Changes (v2.0)
+- **Employment Type**: Added `type` field with options: `fulltime`, `parttime`, `bank`
+- **Minimum Hours**: Added `min_hours_per_week` field that auto-sets based on employment type:
+  - Fulltime: 40 hours/week
+  - Part-time: 20 hours/week  
+  - Bank: 0 hours/week
+- **Multiple Homes Support**: Replaced single `home_id` with `homes` array allowing staff to work across multiple homes
+- **Default Home**: Each user has a `default_home_id` for primary work location
+
+### Constraint System Updates (v2.0)
+- **Hours-Based Constraints**: New constraint types for managing staff hours:
+  - `min_hours_per_week`: Hard constraint ensuring staff meet minimum hours based on employment type
+    - Fulltime: 38 hours/week, Part-time: 0 hours/week, Bank: 0 hours/week
+  - `max_hours_per_week`: Soft constraint preventing excessive overtime with employment-type specific limits
+    - Fulltime: 80 hours/week, Part-time: 20 hours/week, Bank: 20 hours/week
+  - `employment_type_compliance`: Soft constraint ensuring scheduling respects employment type preferences
+  - `shift_priority`: Soft constraint giving part-time workers priority over bank staff for shifts
+- **Smart Penalty Calculation**: Penalties scale based on violation severity and employment type
+- **Context-Aware Validation**: Constraints can target specific homes, services, roles, or employment types
+- **Shift Priority System**: Part-time workers automatically get priority over bank staff when assigning shifts
+
+📖 **Detailed Constraint Documentation**: See [`docs/CONSTRAINT_PARAMETERS.md`](docs/CONSTRAINT_PARAMETERS.md) for complete parameter details and examples.
+
+### Migration Required
+If upgrading from v1.x, run the migration script:
+```bash
+node scripts/migrateUsersToNewSchema.js
+```
+
+### Testing New Constraints
+Test the new hours constraint system:
+```bash
+node scripts/testHoursConstraints.js
+```
+
+## ��️ Architecture
 
 ```
 MyRotaProNode/

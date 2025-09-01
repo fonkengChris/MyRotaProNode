@@ -4,7 +4,7 @@ const Home = require('../models/Home');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 // Get all homes
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const homes = await Home.find().populate('manager_id', 'name email');
     res.json(homes);
@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get home by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const home = await Home.findById(req.params.id).populate('manager_id', 'name email');
     if (!home) {
@@ -29,25 +29,15 @@ router.get('/:id', async (req, res) => {
 // Create new home
 router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
-    console.log('🏠 Creating home with data:', req.body);
-    
     const home = new Home(req.body);
     await home.save();
-    
-    console.log('🏠 Home saved with ID:', home._id);
     
     // Populate the manager details before sending response
     const populatedHome = await Home.findById(home._id).populate('manager_id', 'name email');
     
-    console.log('🏠 Populated home response:', {
-      id: populatedHome._id,
-      name: populatedHome.name,
-      manager: populatedHome.manager_id
-    });
-    
     res.status(201).json(populatedHome);
   } catch (error) {
-    console.error('❌ Error creating home:', error);
+
     res.status(400).json({ error: 'Failed to create home' });
   }
 });

@@ -16,6 +16,7 @@ router.post('/register', [
   body('phone').matches(/^[\+]?[1-9][\d]{0,15}$/).withMessage('Please provide a valid phone number'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
   body('role').isIn(['admin', 'home_manager', 'senior_staff', 'support_worker']).withMessage('Invalid role'),
+  body('type').optional().isIn(['fulltime', 'parttime', 'bank']).withMessage('Invalid employment type'),
   body('home_id').optional().isMongoId().withMessage('Invalid home ID')
 ], async (req, res) => {
   try {
@@ -28,7 +29,7 @@ router.post('/register', [
       });
     }
 
-    const { name, email, phone, password, role, home_id } = req.body;
+    const { name, email, phone, password, role, type, home_id } = req.body;
 
     // Check if user already exists
     const existingUser = await User.findOne({ email });
@@ -38,15 +39,24 @@ router.post('/register', [
       });
     }
 
-    // Create new user
-    const user = new User({
+    // Prepare user data
+    const userData = {
       name,
       email,
       phone,
       password,
       role,
-      home_id: role === 'admin' ? undefined : home_id
-    });
+      type: type || 'fulltime'
+    };
+
+    // Add home to homes array if provided (non-admin users)
+    if (role !== 'admin' && home_id) {
+      userData.homes = [{ home_id, is_default: true }];
+      userData.default_home_id = home_id;
+    }
+
+    // Create new user
+    const user = new User(userData);
 
     await user.save();
 
@@ -143,7 +153,7 @@ router.post('/login', [
 // @access  Private
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).populate('home_id', 'name location');
+    const user = await User.findById(req.user._id).populate('homes.home_id', 'name location');
     
     res.json({
       user: user.publicInfo,

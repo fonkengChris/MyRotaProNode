@@ -99,13 +99,13 @@ const requireHomeAccess = (homeIdParam = 'homeId') => {
         return next();
       }
       
-      // Check if user belongs to the home
-      if (req.user.home_id && req.user.home_id.toString() === homeId.toString()) {
+      // Check if user belongs to the home (check homes array)
+      if (req.user.homes && req.user.homes.some(home => home.home_id.toString() === homeId.toString())) {
         return next();
       }
       
       return res.status(403).json({ 
-        error: 'Access denied. You can only access your assigned home.' 
+        error: 'Access denied. You can only access your assigned homes.' 
       });
     } catch (error) {
       console.error('Home access middleware error:', error);

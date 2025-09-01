@@ -6,16 +6,26 @@ const { requireRole } = require('../middleware/auth');
 // Get all shifts
 router.get('/', async (req, res) => {
   try {
-    const { home_id, service_id, date, start_date, end_date } = req.query;
+    const { home_id, service_id, date, start_date, end_date, user_id } = req.query;
     const filter = {};
     
-    if (home_id) filter.home_id = home_id;
-    if (service_id) filter.service_id = service_id;
+    // Validate home_id if provided
+    if (home_id && home_id !== 'undefined' && home_id !== 'null') {
+      filter.home_id = home_id;
+    }
+    if (service_id && service_id !== 'undefined' && service_id !== 'null') {
+      filter.service_id = service_id;
+    }
     if (date) filter.date = date;
     if (start_date || end_date) {
       filter.date = {};
       if (start_date) filter.date.$gte = start_date;
       if (end_date) filter.date.$lte = end_date;
+    }
+    
+    // If user_id is provided, filter by assigned staff
+    if (user_id && user_id !== 'undefined' && user_id !== 'null') {
+      filter['assigned_staff.user_id'] = user_id;
     }
     
     const shifts = await Shift.find(filter).populate('service_id', 'name');
@@ -41,9 +51,7 @@ router.get('/:id', async (req, res) => {
 // Create new shift
 router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
   try {
-    console.log('🔄 Creating shift with data:', req.body);
-    console.log('📅 Raw date from request:', req.body.date);
-    console.log('📅 Date type:', typeof req.body.date);
+
     
     // Validate that the service exists
     const Service = require('../models/Service');
@@ -106,13 +114,7 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
     }
     
     const shift = new Shift(req.body);
-    console.log('📅 Processed date in shift object:', shift.date);
-    console.log('📅 Date type:', typeof shift.date);
-    console.log('📅 Date value:', shift.date);
-    
     await shift.save();
-    
-    console.log('✅ Shift created successfully:', shift._id);
     res.status(201).json(shift);
   } catch (error) {
     console.error('❌ Error creating shift:', error);
@@ -242,13 +244,84 @@ router.post('/:id/assign', requireRole(['admin', 'home_manager', 'senior_staff']
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
+
+    // Check for scheduling conflicts before assigning staff
+    const SchedulingConflictService = require('../services/schedulingConflictService');
+    const conflictCheck = await SchedulingConflictService.checkShiftAssignmentConflict(
+      user_id,
+      shift.date,
+      shift.start_time,
+      shift.end_time
+    );
+
+    if (conflictCheck.hasConflict) {
+      let userFriendlyMessage = '';
+      
+      switch (conflictCheck.conflictType) {
+        case 'time_off':
+          userFriendlyMessage = `Cannot assign staff member to shift on ${conflictCheck.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
+          break;
+        case 'overlapping_shift':
+          userFriendlyMessage = `Cannot assign staff member - they already have overlapping shifts on ${conflictCheck.conflicts[0]?.date || 'this date'}`;
+          break;
+        case 'max_hours_exceeded':
+          userFriendlyMessage = `Cannot assign staff member - this would exceed maximum daily hours (${conflictCheck.message})`;
+          break;
+        default:
+          userFriendlyMessage = conflictCheck.message;
+      }
+      
+      return res.status(409).json({
+        error: 'Scheduling conflict detected',
+        conflict: conflictCheck,
+        message: userFriendlyMessage,
+        userFriendlyMessage: userFriendlyMessage
+      });
+    }
     
+    // Check if shift is already fully staffed
+    if (shift.assigned_staff.length >= shift.required_staff_count) {
+      return res.status(400).json({ 
+        error: 'Shift is already fully staffed',
+        message: `This shift requires ${shift.required_staff_count} staff members and already has ${shift.assigned_staff.length} assigned`
+      });
+    }
+
+    // Check if staff member is already assigned to this shift
+    const isAlreadyAssigned = shift.assigned_staff.some(assignment => 
+      assignment.user_id.toString() === user_id
+    );
+    
+    if (isAlreadyAssigned) {
+      return res.status(400).json({ 
+        error: 'Staff member already assigned',
+        message: 'This staff member is already assigned to this shift'
+      });
+    }
+
     shift.assignStaff(user_id, note);
     await shift.save();
     
     res.json(shift);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to assign staff' });
+    console.error('Error assigning staff to shift:', error);
+    
+    if (error.name === 'ValidationError') {
+      res.status(400).json({ 
+        error: 'Validation failed', 
+        details: Object.values(error.errors).map(err => err.message)
+      });
+    } else if (error.name === 'CastError') {
+      res.status(400).json({ 
+        error: 'Invalid data format', 
+        details: error.message 
+      });
+    } else {
+      res.status(500).json({ 
+        error: 'Internal server error',
+        message: 'An unexpected error occurred while assigning staff'
+      });
+    }
   }
 });
 
@@ -267,6 +340,27 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'home_manager', 'seni
     res.json(shift);
   } catch (error) {
     res.status(400).json({ error: 'Failed to remove staff' });
+  }
+});
+
+// Check for scheduling conflicts
+router.get('/conflicts/check', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+  try {
+    const { home_id, start_date, end_date } = req.query;
+    
+    if (!home_id || !start_date || !end_date) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters: home_id, start_date, end_date' 
+      });
+    }
+
+    const SchedulingConflictService = require('../services/schedulingConflictService');
+    const conflicts = await SchedulingConflictService.getHomeConflicts(home_id, start_date, end_date);
+    
+    res.json(conflicts);
+  } catch (error) {
+    console.error('Error checking scheduling conflicts:', error);
+    res.status(500).json({ error: 'Failed to check scheduling conflicts' });
   }
 });
 

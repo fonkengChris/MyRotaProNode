@@ -62,7 +62,7 @@ async function createTestUsers() {
           phone: commonPhone,
           password: commonPassword,
           role: userData.role,
-          // No home_id for now - can be allocated later
+          type: 'fulltime', // Default to fulltime for test users
           is_active: true,
           skills: ['personal_care', 'domestic_support', 'social_support'],
           preferred_shift_types: ['morning', 'afternoon'],

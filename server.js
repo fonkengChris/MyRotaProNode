@@ -43,7 +43,7 @@ mongoose.connect(process.env.MONGODB_URI, {
 app.use('/api/setup', setupRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', authenticateToken, userRoutes);
-app.use('/api/homes', homeRoutes);
+app.use('/api/homes', authenticateToken, homeRoutes);
 app.use('/api/services', authenticateToken, serviceRoutes);
 app.use('/api/shifts', authenticateToken, shiftRoutes);
 app.use('/api/weekly-schedules', authenticateToken, weeklyScheduleRoutes);

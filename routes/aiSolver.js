@@ -47,10 +47,28 @@ router.post('/generate-rota', [
 
     // Check if dates are in the future
     const now = new Date();
-    if (startDate < now) {
+    // Allow current week - check if week end date is in the future or today
+    if (endDate < now) {
       return res.status(400).json({ 
-        error: 'Cannot generate rota for past dates' 
+        error: 'Cannot generate rota for past weeks' 
       });
+    }
+
+    // If no existing shifts provided, fetch them from the database
+    let shifts = existing_shifts;
+    if (shifts.length === 0) {
+      const Shift = require('../models/Shift');
+      shifts = await Shift.find({
+        home_id: home_id,
+        date: { $gte: week_start_date, $lte: week_end_date }
+      }).populate('service_id', 'name');
+      
+      if (shifts.length === 0) {
+        return res.status(400).json({
+          error: 'No shifts found for the specified week and home',
+          details: ['Please create shifts in the rota grid before using AI generation']
+        });
+      }
     }
 
     // Initialize AI solver
@@ -62,7 +80,7 @@ router.post('/generate-rota', [
       endDate,
       home_id,
       service_id,
-      existing_shifts
+      shifts
     );
 
     if (!result.success) {

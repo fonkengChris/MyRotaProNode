@@ -11,19 +11,27 @@ router.get('/', async (req, res) => {
     
     if (user_id) filter.user_id = user_id;
     if (status) filter.status = status;
-    if (home_id) filter.home_id = home_id;
     if (start_date || end_date) {
       filter.start_date = {};
       if (start_date) filter.start_date.$gte = start_date;
       if (end_date) filter.start_date.$lte = end_date;
     }
     
-    const requests = await TimeOffRequest.find(filter)
-      .populate('user_id', 'name email role')
-      .populate('home_id', 'name');
+    let requests = await TimeOffRequest.find(filter)
+      .populate('user_id', 'name email role homes')
+      .populate('approved_by', 'name email role');
+    
+    // Filter by home_id if specified (through user's homes)
+    if (home_id) {
+      requests = requests.filter(request => 
+        request.user_id && request.user_id.homes && 
+        request.user_id.homes.some(home => home.home_id.toString() === home_id)
+      );
+    }
     
     res.json(requests);
   } catch (error) {
+    console.error('Error fetching time-off requests:', error);
     res.status(500).json({ error: 'Failed to fetch time-off requests' });
   }
 });
@@ -33,6 +41,7 @@ router.get('/:id', async (req, res) => {
   try {
     const request = await TimeOffRequest.findById(req.params.id)
       .populate('user_id', 'name email role')
+      .populate('approved_by', 'name email role')
       .populate('home_id', 'name');
     
     if (!request) {
@@ -88,21 +97,29 @@ router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
   }
 });
 
-// Approve time-off request
-router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
-  try {
-    const request = await TimeOffRequest.findById(req.params.id);
-    
-    if (!request) {
-      return res.status(404).json({ error: 'Time-off request not found' });
+  // Approve time-off request
+  router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+    try {
+      const request = await TimeOffRequest.findById(req.params.id);
+      
+      if (!request) {
+        return res.status(404).json({ error: 'Time-off request not found' });
+      }
+      
+      // Call the approve method and save the changes
+      request.approve(req.user.id); // Pass the approver's ID
+      await request.save();
+      
+      // Populate user info for the response
+      await request.populate('user_id', 'name email role')
+        .populate('approved_by', 'name email role');
+      
+      res.json(request);
+    } catch (error) {
+      console.error('Error approving time-off request:', error);
+      res.status(400).json({ error: 'Failed to approve time-off request' });
     }
-    
-    await request.approve();
-    res.json(request);
-  } catch (error) {
-    res.status(400).json({ error: 'Failed to approve time-off request' });
-  }
-});
+  });
 
 // Deny time-off request
 router.post('/:id/deny', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
@@ -119,10 +136,18 @@ router.post('/:id/deny', requireRole(['admin', 'home_manager', 'senior_staff']),
       return res.status(404).json({ error: 'Time-off request not found' });
     }
     
-    await request.deny(reason);
+    // Call the deny method and save the changes
+    request.deny(req.user.id, reason); // Pass the denier's ID and reason
+    await request.save();
+    
+          // Populate user info for the response
+      await request.populate('user_id', 'name email role')
+        .populate('approved_by', 'name email role');
+    
     res.json(request);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to deny time-off request' });
+    console.error('Error denying time-off request:', error);
+    res.status(500).json({ error: 'Failed to deny time-off request' });
   }
 });
 
@@ -139,7 +164,10 @@ router.get('/user/:userId', async (req, res) => {
       if (end_date) filter.start_date.$lte = end_date;
     }
     
-    const requests = await TimeOffRequest.find(filter).populate('home_id', 'name');
+    const requests = await TimeOffRequest.find(filter)
+      .populate('user_id', 'name email role')
+      .populate('approved_by', 'name email role')
+      .populate('home_id', 'name');
     res.json(requests);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch user time-off requests' });

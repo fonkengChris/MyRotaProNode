@@ -51,7 +51,7 @@ router.get('/', requireRole(['admin']), async (req, res) => {
 // Create new weekly schedule for a home
 router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
   try {
-    console.log('🔄 Creating weekly schedule with data:', req.body);
+
     
     // Check if a schedule already exists for this home
     const existingSchedule = await WeeklySchedule.findOne({ home_id: req.body.home_id });
@@ -65,7 +65,7 @@ router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
     const schedule = new WeeklySchedule(req.body);
     await schedule.save();
     
-    console.log('✅ Weekly schedule created successfully:', schedule._id);
+    
     
     // Populate service details before sending response
     const populatedSchedule = await WeeklySchedule.findById(schedule._id)
@@ -96,8 +96,7 @@ router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 // Update existing weekly schedule
 router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
   try {
-    console.log('🔄 Updating weekly schedule:', req.params.id);
-    console.log('📝 Update data:', req.body);
+
     
     const schedule = await WeeklySchedule.findByIdAndUpdate(
       req.params.id,
@@ -109,7 +108,7 @@ router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
       return res.status(404).json({ error: 'Weekly schedule not found' });
     }
     
-    console.log('✅ Weekly schedule updated successfully');
+    
     
     // Populate service details before sending response
     const populatedSchedule = await WeeklySchedule.findById(schedule._id)
@@ -158,8 +157,7 @@ router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'home_manager']),
     const { id, dayName } = req.params;
     const shiftData = req.body;
     
-    console.log(`🔄 Adding shift to ${dayName} for schedule:`, id);
-    console.log('📝 Shift data:', shiftData);
+
     
     const schedule = await WeeklySchedule.findById(id);
     if (!schedule) {
@@ -169,7 +167,7 @@ router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'home_manager']),
     schedule.addShiftToDay(dayName, shiftData);
     await schedule.save();
     
-    console.log('✅ Shift added successfully');
+    
     
     // Populate service details before sending response
     const populatedSchedule = await WeeklySchedule.findById(schedule._id)
@@ -202,7 +200,7 @@ router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'ho
   try {
     const { id, dayName, shiftIndex } = req.params;
     
-    console.log(`🔄 Removing shift ${shiftIndex} from ${dayName} for schedule:`, id);
+
     
     const schedule = await WeeklySchedule.findById(id);
     if (!schedule) {
@@ -212,7 +210,7 @@ router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'ho
     schedule.removeShiftFromDay(dayName, parseInt(shiftIndex));
     await schedule.save();
     
-    console.log('✅ Shift removed successfully');
+    
     
     // Populate service details before sending response
     const populatedSchedule = await WeeklySchedule.findById(schedule._id)
@@ -236,7 +234,7 @@ router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'home_manager'])
   try {
     const { id, dayName } = req.params;
     
-    console.log(`🔄 Toggling ${dayName} status for schedule:`, id);
+
     
     const schedule = await WeeklySchedule.findById(id);
     if (!schedule) {
@@ -248,7 +246,7 @@ router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'home_manager'])
       schedule.schedule[day].is_active = !schedule.schedule[day].is_active;
       await schedule.save();
       
-      console.log(`✅ ${dayName} status toggled to:`, schedule.schedule[day].is_active);
+
       
       // Populate service details before sending response
       const populatedSchedule = await WeeklySchedule.findById(schedule._id)
