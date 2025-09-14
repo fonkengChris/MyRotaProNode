@@ -35,6 +35,63 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get available shifts for staff selection
+router.get('/available', async (req, res) => {
+  try {
+    const { user_id, start_date, end_date, home_ids } = req.query;
+    
+    if (!user_id || !start_date || !end_date) {
+      return res.status(400).json({ 
+        error: 'Missing required parameters: user_id, start_date, end_date' 
+      });
+    }
+
+    // Get user's homes if home_ids not provided
+    let targetHomeIds = [];
+    if (home_ids) {
+      targetHomeIds = home_ids.split(',').filter(id => id && id !== 'undefined' && id !== 'null');
+    } else {
+      const User = require('../models/User');
+      const user = await User.findById(user_id).select('homes');
+      if (user && user.homes) {
+        targetHomeIds = user.homes.map(home => home.home_id.toString());
+      }
+    }
+
+    if (targetHomeIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Get shifts that need more staff in user's homes
+    const shifts = await Shift.find({
+      home_id: { $in: targetHomeIds },
+      date: { $gte: start_date, $lte: end_date },
+      is_active: true
+    }).populate('service_id', 'name').populate('home_id', 'name');
+
+    // Filter to shifts that need more staff and user isn't already assigned to
+    const availableShifts = shifts.filter(shift => {
+      const currentAssignments = shift.assigned_staff || [];
+      const requiredStaff = shift.required_staff_count || 1;
+      
+      // Check if shift needs more staff
+      if (currentAssignments.length >= requiredStaff) return false;
+      
+      // Check if user is already assigned to this shift
+      const isAlreadyAssigned = currentAssignments.some(assignment => 
+        assignment.user_id.toString() === user_id
+      );
+      
+      return !isAlreadyAssigned;
+    });
+
+    res.json(availableShifts);
+  } catch (error) {
+    console.error('Error fetching available shifts:', error);
+    res.status(500).json({ error: 'Failed to fetch available shifts' });
+  }
+});
+
 // Get shift by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -73,16 +130,21 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
       _id: { $ne: req.body.id } // Exclude current shift if updating
     });
     
-    // Check for overlaps on the next day (for overnight shifts)
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = nextDay.toISOString().split('T')[0];
+    // Check for overlaps on the next day ONLY if this is an overnight shift
+    let nextDayShifts = [];
+    const isNewShiftOvernight = start_time > end_time; // New shift spans to next day
     
-    const nextDayShifts = await Shift.find({ 
-      home_id, 
-      date: nextDayStr,
-      _id: { $ne: req.body.id } // Exclude current shift if updating
-    });
+    if (isNewShiftOvernight) {
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().split('T')[0];
+      
+      nextDayShifts = await Shift.find({ 
+        home_id, 
+        date: nextDayStr,
+        _id: { $ne: req.body.id } // Exclude current shift if updating
+      });
+    }
     
     const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
     
@@ -92,9 +154,16 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
       const newStart = new Date(`2000-01-01T${start_time}`);
       let newEnd = new Date(`2000-01-01T${end_time}`);
       
-      // Handle overnight shifts
-      if (existingEnd < existingStart) existingEnd.setDate(existingEnd.getDate() + 1);
-      if (newEnd < newStart) newEnd.setDate(newEnd.getDate() + 1);
+      // Handle overnight shifts - only if they actually span to next day
+      const isExistingShiftOvernight = existingShift.start_time > existingShift.end_time;
+      const isNewShiftOvernight = start_time > end_time;
+      
+      if (isExistingShiftOvernight) {
+        existingEnd.setDate(existingEnd.getDate() + 1);
+      }
+      if (isNewShiftOvernight) {
+        newEnd.setDate(newEnd.getDate() + 1);
+      }
       
       // Convert all times to minutes since midnight for easier comparison
       const newStartMinutes = newStart.getHours() * 60 + newStart.getMinutes();
@@ -150,16 +219,21 @@ router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async
       _id: { $ne: req.params.id } // Exclude current shift being updated
     });
     
-    // Check for overlaps on the next day (for overnight shifts)
-    const nextDay = new Date(date);
-    nextDay.setDate(nextDay.getDate() + 1);
-    const nextDayStr = nextDay.toISOString().split('T')[0];
+    // Check for overlaps on the next day ONLY if this is an overnight shift
+    let nextDayShifts = [];
+    const isNewShiftOvernight = start_time > end_time; // New shift spans to next day
     
-    const nextDayShifts = await Shift.find({ 
-      home_id, 
-      date: nextDayStr,
-      _id: { $ne: req.params.id } // Exclude current shift being updated
-    });
+    if (isNewShiftOvernight) {
+      const nextDay = new Date(date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const nextDayStr = nextDay.toISOString().split('T')[0];
+      
+      nextDayShifts = await Shift.find({ 
+        home_id, 
+        date: nextDayStr,
+        _id: { $ne: req.params.id } // Exclude current shift being updated
+      });
+    }
     
     const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
     
@@ -169,9 +243,16 @@ router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async
       const newStart = new Date(`2000-01-01T${start_time}`);
       let newEnd = new Date(`2000-01-01T${end_time}`);
       
-      // Handle overnight shifts
-      if (existingEnd < existingStart) existingEnd.setDate(existingEnd.getDate() + 1);
-      if (newEnd < newStart) newEnd.setDate(newEnd.getDate() + 1);
+      // Handle overnight shifts - only if they actually span to next day
+      const isExistingShiftOvernight = existingShift.start_time > existingShift.end_time;
+      const isNewShiftOvernight = start_time > end_time;
+      
+      if (isExistingShiftOvernight) {
+        existingEnd.setDate(existingEnd.getDate() + 1);
+      }
+      if (isNewShiftOvernight) {
+        newEnd.setDate(newEnd.getDate() + 1);
+      }
       
       // Convert all times to minutes since midnight for easier comparison
       const newStartMinutes = newStart.getHours() * 60 + newStart.getMinutes();
@@ -236,10 +317,21 @@ router.delete('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), as
 });
 
 // Assign staff to shift
-router.post('/:id/assign', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.post('/:id/assign', async (req, res) => {
   try {
     const { user_id, note } = req.body;
     const shift = await Shift.findById(req.params.id);
+    
+    // Check permissions: admins/managers/senior staff can assign anyone, support workers can only assign themselves
+    const currentUser = req.user; // This should be set by the authenticateToken middleware
+    const allowedRoles = ['admin', 'home_manager', 'senior_staff'];
+    
+    if (!allowedRoles.includes(currentUser.role) && currentUser._id.toString() !== user_id) {
+      return res.status(403).json({ 
+        error: 'Insufficient permissions. You can only assign yourself to shifts.',
+        message: 'Support workers can only select shifts for themselves'
+      });
+    }
     
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });

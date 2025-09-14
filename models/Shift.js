@@ -118,7 +118,7 @@ shiftSchema.virtual('duration_hours').get(function() {
 
 // Virtual for shift status
 shiftSchema.virtual('status').get(function() {
-  if (this.assigned_staff.length === 0) return 'unassigned';
+  if (!this.assigned_staff || this.assigned_staff.length === 0) return 'unassigned';
   if (this.assigned_staff.length < this.required_staff_count) return 'understaffed';
   if (this.assigned_staff.length === this.required_staff_count) return 'fully_staffed';
   return 'overstaffed';

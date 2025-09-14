@@ -13,7 +13,14 @@ router.post('/generate-rota', [
   requireRole(['admin', 'home_manager']),
   body('week_start_date').isISO8601().withMessage('Valid week start date is required'),
   body('week_end_date').isISO8601().withMessage('Valid week end date is required'),
-  body('home_id').isMongoId().withMessage('Valid home ID is required'),
+  body('home_ids').custom((value) => {
+    // Accept either a single home_id or an array of home_ids
+    if (Array.isArray(value)) {
+      return value.every(id => require('mongoose').Types.ObjectId.isValid(id));
+    } else {
+      return require('mongoose').Types.ObjectId.isValid(value);
+    }
+  }).withMessage('Valid home ID(s) are required'),
   body('service_id').isMongoId().withMessage('Valid service ID is required'),
   body('existing_shifts').optional().isArray().withMessage('Existing shifts must be an array')
 ], async (req, res) => {
@@ -30,10 +37,13 @@ router.post('/generate-rota', [
     const { 
       week_start_date, 
       week_end_date, 
-      home_id, 
+      home_ids, 
       service_id, 
       existing_shifts = [] 
     } = req.body;
+
+    // Normalize home_ids to array
+    const homeIdArray = Array.isArray(home_ids) ? home_ids : [home_ids];
 
     // Validate date range
     const startDate = new Date(week_start_date);
@@ -45,27 +55,33 @@ router.post('/generate-rota', [
       });
     }
 
-    // Check if dates are in the future
+    // Check if dates are too far in the past (allow current week)
     const now = new Date();
-    // Allow current week - check if week end date is in the future or today
-    if (endDate < now) {
+    now.setHours(0, 0, 0, 0); // Reset time to start of day
+    const oneWeekAgo = new Date(now);
+    oneWeekAgo.setDate(now.getDate() - 7);
+    
+    if (startDate < oneWeekAgo) {
       return res.status(400).json({ 
-        error: 'Cannot generate rota for past weeks' 
+        error: 'Cannot generate rota for weeks more than one week in the past' 
       });
     }
 
-    // If no existing shifts provided, fetch them from the database
+    // If no existing shifts provided, fetch them from the database for all homes
     let shifts = existing_shifts;
     if (shifts.length === 0) {
       const Shift = require('../models/Shift');
+      const mongoose = require('mongoose');
+      const homeIdObjs = homeIdArray.map(homeId => new mongoose.Types.ObjectId(homeId));
+      
       shifts = await Shift.find({
-        home_id: home_id,
+        home_id: { $in: homeIdObjs },
         date: { $gte: week_start_date, $lte: week_end_date }
       }).populate('service_id', 'name');
       
       if (shifts.length === 0) {
         return res.status(400).json({
-          error: 'No shifts found for the specified week and home',
+          error: 'No shifts found for the specified week and homes',
           details: ['Please create shifts in the rota grid before using AI generation']
         });
       }
@@ -74,11 +90,11 @@ router.post('/generate-rota', [
     // Initialize AI solver
     const aiSolver = new AISolver();
     
-    // Generate rota
+    // Generate rota for multiple homes
     const result = await aiSolver.generateRota(
       startDate,
       endDate,
-      home_id,
+      homeIdArray,
       service_id,
       shifts
     );
@@ -90,15 +106,46 @@ router.post('/generate-rota', [
       });
     }
 
+    // Create a user-friendly summary of the employment type distribution
+    let distributionSummary = '';
+    try {
+      if (result && result.employment_distribution) {
+        const dist = result.employment_distribution;
+        distributionSummary = `Employment type distribution (${result.homes_processed} homes): `;
+        
+        if (dist.fulltime && dist.fulltime.staff_count > 0) {
+          distributionSummary += `Full-time (${dist.fulltime.staff_count} staff, avg ${dist.fulltime.average_hours.toFixed(1)}h), `;
+        }
+        if (dist.parttime && dist.parttime.staff_count > 0) {
+          distributionSummary += `Part-time (${dist.parttime.staff_count} staff, avg ${dist.parttime.average_hours.toFixed(1)}h), `;
+        }
+        if (dist.bank && dist.bank.staff_count > 0) {
+          distributionSummary += `Bank (${dist.bank.staff_count} staff, avg ${dist.bank.average_hours.toFixed(1)}h)`;
+        }
+      }
+    } catch (error) {
+      console.warn('Error creating employment distribution summary:', error);
+      distributionSummary = 'Employment type distribution: Unable to calculate';
+    }
+
     res.json({
-      message: 'Rota generated successfully',
-      data: result
+      message: `Rota generated successfully for ${result.homes_processed} home(s)`,
+      data: result,
+      summary: distributionSummary
     });
 
   } catch (error) {
     console.error('AI Solver rota generation error:', error);
+    
+    // Provide more detailed error information
+    let errorMessage = 'Server error during rota generation';
+    if (error.message) {
+      errorMessage = error.message;
+    }
+    
     res.status(500).json({ 
-      error: 'Server error during rota generation' 
+      error: errorMessage,
+      details: error.stack ? error.stack.split('\n').slice(0, 3) : []
     });
   }
 });

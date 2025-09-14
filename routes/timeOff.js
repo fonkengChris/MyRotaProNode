@@ -23,10 +23,15 @@ router.get('/', async (req, res) => {
     
     // Filter by home_id if specified (through user's homes)
     if (home_id) {
-      requests = requests.filter(request => 
-        request.user_id && request.user_id.homes && 
-        request.user_id.homes.some(home => home.home_id.toString() === home_id)
-      );
+      requests = requests.filter(request => {
+        if (!request.user_id || !request.user_id.homes) return false;
+        
+        // Check if user belongs to the specified home
+        return request.user_id.homes.some(home => {
+          const homeId = typeof home.home_id === 'string' ? home.home_id : home.home_id.toString();
+          return homeId === home_id;
+        });
+      });
     }
     
     res.json(requests);
@@ -97,33 +102,58 @@ router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
   }
 });
 
-  // Approve time-off request
-  router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
-    try {
-      const request = await TimeOffRequest.findById(req.params.id);
-      
-      if (!request) {
-        return res.status(404).json({ error: 'Time-off request not found' });
-      }
-      
-      // Call the approve method and save the changes
-      request.approve(req.user.id); // Pass the approver's ID
-      await request.save();
-      
-      // Populate user info for the response
-      await request.populate('user_id', 'name email role')
-        .populate('approved_by', 'name email role');
-      
-      res.json(request);
-    } catch (error) {
-      console.error('Error approving time-off request:', error);
-      res.status(400).json({ error: 'Failed to approve time-off request' });
+// Approve time-off request
+router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+  try {
+    console.log('Approving time-off request:', req.params.id, 'by user:', req.user._id);
+    
+    const request = await TimeOffRequest.findById(req.params.id);
+    
+    if (!request) {
+      console.log('Time-off request not found:', req.params.id);
+      return res.status(404).json({ error: 'Time-off request not found' });
     }
-  });
+    
+    console.log('Found request:', request.status, 'Current status:', request.status);
+    
+    // Check if request is already processed
+    if (request.status !== 'pending') {
+      return res.status(400).json({ 
+        error: 'Request has already been processed',
+        details: `This request is currently ${request.status} and cannot be approved again.`
+      });
+    }
+    
+    // Call the approve method and save the changes
+    request.approve(req.user._id); // Pass the approver's ID
+    await request.save();
+    
+    console.log('Request approved successfully');
+    
+    // Populate user info for the response
+    await request.populate('user_id', 'name email role');
+    await request.populate('approved_by', 'name email role');
+    
+    res.json(request);
+  } catch (error) {
+    console.error('Error approving time-off request:', error);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    });
+    res.status(400).json({ 
+      error: 'Failed to approve time-off request',
+      details: error.message 
+    });
+  }
+});
 
 // Deny time-off request
 router.post('/:id/deny', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
   try {
+    console.log('Denying time-off request:', req.params.id, 'by user:', req.user._id, 'reason:', req.body.reason);
+    
     const { reason } = req.body;
     
     if (!reason) {
@@ -133,21 +163,43 @@ router.post('/:id/deny', requireRole(['admin', 'home_manager', 'senior_staff']),
     const request = await TimeOffRequest.findById(req.params.id);
     
     if (!request) {
+      console.log('Time-off request not found:', req.params.id);
       return res.status(404).json({ error: 'Time-off request not found' });
     }
     
+    console.log('Found request:', request.status, 'Current status:', request.status);
+    
+    // Check if request is already processed
+    if (request.status !== 'pending') {
+      console.log('Request already processed:', request.status);
+      return res.status(400).json({ 
+        error: 'Request has already been processed',
+        details: `This request is currently ${request.status} and cannot be denied.`
+      });
+    }
+    
     // Call the deny method and save the changes
-    request.deny(req.user.id, reason); // Pass the denier's ID and reason
+    request.deny(req.user._id, reason); // Pass the denier's ID and reason
     await request.save();
     
-          // Populate user info for the response
-      await request.populate('user_id', 'name email role')
-        .populate('approved_by', 'name email role');
+    console.log('Request denied successfully');
+    
+    // Populate user info for the response
+    await request.populate('user_id', 'name email role');
+    await request.populate('approved_by', 'name email role');
     
     res.json(request);
   } catch (error) {
     console.error('Error denying time-off request:', error);
-    res.status(500).json({ error: 'Failed to deny time-off request' });
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to deny time-off request',
+      details: error.message 
+    });
   }
 });
 
