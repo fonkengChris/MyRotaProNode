@@ -1,0 +1,1586 @@
+[{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b416"
+  },
+  "home_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c24178f74"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b228fd17f01d8c241790f8"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c24178f8b"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2290717f01d8c2417915c"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c24178fac"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2291217f01d8c241791c0"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c24178fd7"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2291d17f01d8c24179224"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c2417900c"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2292717f01d8c24179288"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c2417904b"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2293117f01d8c241792ec"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b228e817f01d8c24179094"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2294017f01d8c24179350"
+          }
+        }
+      ]
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.882Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:27:12.553Z"
+  },
+  "__v": 53
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b434"
+  },
+  "home_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29ca9"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2297217f01d8c241793fc"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29ca7"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2297b17f01d8c24179460"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29ca5"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2298717f01d8c241794c4"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29ca3"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2299217f01d8c24179528"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29ca1"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b2299d17f01d8c2417958c"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29c9f"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b229a917f01d8c241795f0"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours (overnight)",
+          "_id": {
+            "$oid": "68b0eb995e43c25114f29c9d"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b229b317f01d8c24179654"
+          }
+        }
+      ]
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.896Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:29:07.363Z"
+  },
+  "__v": 14
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b447"
+  },
+  "home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c2417991e"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179926"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179930"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c2417993d"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c2417994c"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c2417995e"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179972"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179989"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c241799a2"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c241799be"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c241799dc"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c241799fd"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179a20"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22a8317f01d8c24179a46"
+          }
+        }
+      ]
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.901Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:32:35.344Z"
+  },
+  "__v": 35
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b45f"
+  },
+  "home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3f62"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3f6a"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3f74"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3f80"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3f8f"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3fa0"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3fb3"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3fc9"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3fe1"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b3ffb"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4018"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4037"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4058"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b407c"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b40a2"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b40ca"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b40f5"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4122"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "07:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Morning shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4151"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "15:00",
+          "end_time": "23:00",
+          "shift_type": "afternoon",
+          "required_staff_count": 1,
+          "notes": "Afternoon shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b4183"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "23:00",
+          "end_time": "07:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 8 hours",
+          "_id": {
+            "$oid": "68b5b93da5bfec52409b41b7"
+          }
+        }
+      ]
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.907Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-01T15:18:21.743Z"
+  },
+  "__v": 119
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b477"
+  },
+  "home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a3da"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a3e2"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a3ec"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a3f9"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a408"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a41a"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a42e"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a445"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a45e"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a47a"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a498"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a4b9"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "08:00",
+          "end_time": "20:00",
+          "shift_type": "long_day",
+          "required_staff_count": 1,
+          "notes": "Day shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a4dc"
+          }
+        },
+        {
+          "service_id": {
+            "$oid": "68a63de4a1391dad179f4005"
+          },
+          "start_time": "20:00",
+          "end_time": "08:00",
+          "shift_type": "night",
+          "required_staff_count": 1,
+          "notes": "Night shift - 12 hours",
+          "_id": {
+            "$oid": "68b22b2817f01d8c2417a502"
+          }
+        }
+      ]
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.913Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:35:20.878Z"
+  },
+  "__v": 35
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b48f"
+  },
+  "home_id": {
+    "$oid": "68a63f6ea1391dad179f404a"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63fcfa1391dad179f4060"
+          },
+          "start_time": "09:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 3,
+          "notes": "Weekend coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22d3fc9c5cddf6c441b9c"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63fcfa1391dad179f4060"
+          },
+          "start_time": "09:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 3,
+          "notes": "Weekend coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22d55c9c5cddf6c441bdc"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63fcfa1391dad179f4060"
+          },
+          "start_time": "09:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 3,
+          "notes": "Weekend coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22d65c9c5cddf6c441c1c"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63fcfa1391dad179f4060"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 3,
+          "notes": "Weekend coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22d72c9c5cddf6c441c5c"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a63fcfa1391dad179f4060"
+          },
+          "start_time": "09:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 3,
+          "notes": "Weekend coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22d81c9c5cddf6c441ca3"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": []
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": []
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.920Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:45:35.699Z"
+  },
+  "__v": 40
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b4a7"
+  },
+  "home_id": {
+    "$oid": "68a64076a1391dad179f4074"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a64129a1391dad179f408a"
+          },
+          "start_time": "09:00",
+          "end_time": "15:30",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Day coverage - 6.5 hours",
+          "_id": {
+            "$oid": "68b22ddcc9c5cddf6c442041"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": []
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": []
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": []
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a64129a1391dad179f408a"
+          },
+          "start_time": "09:00",
+          "end_time": "15:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Weekend coverage - 6 hours",
+          "_id": {
+            "$oid": "68b22dfac9c5cddf6c4420d5"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68a64129a1391dad179f408a"
+          },
+          "start_time": "08:00",
+          "end_time": "11:00",
+          "shift_type": "morning",
+          "required_staff_count": 1,
+          "notes": "Weekend coverage - 3 hours",
+          "_id": {
+            "$oid": "68b22e18c9c5cddf6c442116"
+          }
+        }
+      ]
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": []
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.928Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:47:52.661Z"
+  },
+  "__v": 38
+},
+{
+  "_id": {
+    "$oid": "68b0ea09ff2667791cb4b4bf"
+  },
+  "home_id": {
+    "$oid": "68ac5b4a27349153fef9cd57"
+  },
+  "schedule": {
+    "monday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68ac5d2b27349153fef9cd8d"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 5,
+          "notes": "Weekday coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22e93c9c5cddf6c442325"
+          }
+        }
+      ]
+    },
+    "tuesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68ac5d2b27349153fef9cd8d"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 5,
+          "notes": "Weekday coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22ea6c9c5cddf6c442355"
+          }
+        }
+      ]
+    },
+    "wednesday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68ac5d2b27349153fef9cd8d"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 5,
+          "notes": "Weekday coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22ecdc9c5cddf6c442385"
+          }
+        }
+      ]
+    },
+    "thursday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68ac5d2b27349153fef9cd8d"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 5,
+          "notes": "Weekday coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22ee2c9c5cddf6c4423b5"
+          }
+        }
+      ]
+    },
+    "friday": {
+      "is_active": true,
+      "shifts": [
+        {
+          "service_id": {
+            "$oid": "68ac5d2b27349153fef9cd8d"
+          },
+          "start_time": "09:00",
+          "end_time": "17:00",
+          "shift_type": "morning",
+          "required_staff_count": 5,
+          "notes": "Weekday coverage - 8 hours",
+          "_id": {
+            "$oid": "68b22ef5c9c5cddf6c4423e5"
+          }
+        }
+      ]
+    },
+    "saturday": {
+      "is_active": true,
+      "shifts": []
+    },
+    "sunday": {
+      "is_active": true,
+      "shifts": []
+    }
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-28T23:45:13.936Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:51:33.350Z"
+  },
+  "__v": 31
+}]

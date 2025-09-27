@@ -1,0 +1,253 @@
+[{
+  "_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "name": "Hope House",
+  "location": {
+    "address": "9 Sydney Street",
+    "city": "Burton On Trent",
+    "postcode": "DE14 2QX"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "hopehouse@rcs.com"
+  },
+  "capacity": 4,
+  "services": [],
+  "operating_hours": {
+    "start": "00:00",
+    "end": "00:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T20:49:45.103Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T20:49:45.103Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "name": "Peace Home",
+  "location": {
+    "address": "100 A, High Street",
+    "city": "Burton On trent",
+    "postcode": "DE14 1LJ"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "peacehome@rcs.com"
+  },
+  "capacity": 4,
+  "services": [],
+  "operating_hours": {
+    "start": "00:00",
+    "end": "00:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T20:57:37.182Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T20:57:37.182Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "name": "Happy House",
+  "location": {
+    "address": "10 Park Road",
+    "city": "Swadlincote",
+    "postcode": "DE12 6BJ"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "happyhouse@rcs.com"
+  },
+  "capacity": 4,
+  "services": [],
+  "operating_hours": {
+    "start": "00:00",
+    "end": "00:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:07:45.490Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T21:07:45.490Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "name": "Love House",
+  "location": {
+    "address": "20 Trent Street",
+    "city": "Derby",
+    "postcode": "DE24 8RY"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "lovehouse@rcs.com"
+  },
+  "capacity": 5,
+  "services": [],
+  "operating_hours": {
+    "start": "00:00",
+    "end": "00:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:10:10.181Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T21:10:10.181Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "name": "Gentle House",
+  "location": {
+    "address": "8 Pelham Street",
+    "city": "Derby",
+    "postcode": "DE22 3UG"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "gentlehouse@rcs.com"
+  },
+  "capacity": 2,
+  "services": [],
+  "operating_hours": {
+    "start": "00:00",
+    "end": "00:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:12:10.450Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T21:12:10.450Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a63f6ea1391dad179f404a"
+  },
+  "name": "Compassion House",
+  "location": {
+    "address": "19 Cotton Lane",
+    "city": "Derby",
+    "postcode": "DE24 8GG"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "compassionhouse@rcs.com"
+  },
+  "capacity": 10,
+  "operating_hours": {
+    "start": "09:00",
+    "end": "15:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:34:38.378Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T21:34:38.378Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a64076a1391dad179f4074"
+  },
+  "name": "Lansdowne House",
+  "location": {
+    "address": "24 Lansdowne Drive",
+    "city": "Nottingham",
+    "postcode": "NG2 7FJ"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "lansdownehouse@rcs.com"
+  },
+  "capacity": 1,
+  "operating_hours": {
+    "start": "09:30",
+    "end": "15:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:39:02.023Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-29T22:56:07.772Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68ac5b4a27349153fef9cd57"
+  },
+  "name": "Office",
+  "location": {
+    "address": "200 Brian Clough Business Center",
+    "city": "Derby",
+    "postcode": "DE24 8GJ"
+  },
+  "manager_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "contact_info": {
+    "phone": "+441234567890",
+    "email": "rightcareservices@rcs.com"
+  },
+  "capacity": 10,
+  "operating_hours": {
+    "start": "09:00",
+    "end": "17:00"
+  },
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-25T12:47:06.321Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-25T12:47:06.321Z"
+  },
+  "__v": 0
+}]

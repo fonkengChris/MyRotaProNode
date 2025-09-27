@@ -1,0 +1,694 @@
+[{
+  "_id": {
+    "$oid": "68a64385a1391dad179f40c9"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-08-20",
+  "is_available": true,
+  "preferred_shift_types": [],
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-08-20T21:52:05.192Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T22:22:15.845Z"
+  },
+  "__v": 0,
+  "end_time": "21:00",
+  "preferred_shift_type": "overtime",
+  "start_time": "06:00"
+},
+{
+  "_id": {
+    "$oid": "68a64ab285443398fed6fff2"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-08-21",
+  "start_time": "06:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-08-20T22:22:42.580Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T22:22:42.580Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a64c3e85443398fed6fff9"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-08-22",
+  "start_time": "06:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "evening",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-08-20T22:29:18.758Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-20T22:29:18.758Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0100"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-25",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.716Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.716Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0101"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-26",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.719Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.719Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0102"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-27",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.720Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.720Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0103"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-28",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.722Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.722Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0104"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-29",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.724Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.724Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0105"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-30",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.726Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.726Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0106"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-08-31",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.727Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.727Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0107"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-25",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.728Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.728Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0108"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-26",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.730Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.730Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd0109"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-27",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.731Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.731Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd010a"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-28",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.732Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.732Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd010b"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-29",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.733Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.733Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd010c"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-30",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.734Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.734Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68afb31bad8a36ec33dd010d"
+  },
+  "user_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "date": "2025-08-31",
+  "is_available": true,
+  "start_time": "06:00",
+  "end_time": "22:00",
+  "preferred_shift_types": [
+    "morning",
+    "afternoon",
+    "night"
+  ],
+  "notes": "Auto-generated for AI testing",
+  "submitted_at": {
+    "$date": "2025-08-28T01:38:35.735Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T01:38:35.735Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbad"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-16",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.620Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.620Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbaf"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-18",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.624Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.624Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbb1"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-19",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.624Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.624Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbb3"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-26",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.625Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.625Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbb5"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-15",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.625Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.625Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbb7"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-17",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.626Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.626Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbc8"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-21",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.646Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.646Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbca"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-22",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.647Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.647Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbcc"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-23",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.647Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.647Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbce"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-24",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.648Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.648Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1072553d48f85ff8cbd0"
+  },
+  "user_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "date": "2025-09-25",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:37:06.650Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:37:06.650Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1221553d48f85ff8cd44"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-09-22",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:44:17.025Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:44:17.025Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1266553d48f85ff8d06e"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-09-30",
+  "start_time": "09:00",
+  "end_time": "17:00",
+  "is_available": true,
+  "preferred_shift_type": "morning",
+  "notes": "",
+  "submitted_at": {
+    "$date": "2025-09-20T20:45:26.229Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T20:45:26.229Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68cf1e7495b3d2df2e2ec986"
+  },
+  "user_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "date": "2025-10-02",
+  "start_time": "08:00",
+  "end_time": "17:00",
+  "is_available": false,
+  "preferred_shift_type": "none",
+  "notes": "Marked as unavailable",
+  "submitted_at": {
+    "$date": "2025-09-20T21:36:52.765Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-20T21:36:52.765Z"
+  },
+  "__v": 0
+}]

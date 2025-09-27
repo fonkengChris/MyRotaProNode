@@ -1,0 +1,168 @@
+[{
+  "_id": {
+    "$oid": "68a63de4a1391dad179f4005"
+  },
+  "name": "Supported Living",
+  "description": "Supported living services provide personalized care to help people with disabilities, mental health issues, or other complex needs live independently. They focus on empowering individuals to live in their own homes, offering support with daily tasks, skill-building, and community involvement. The goal is to promote independence, choice, and a good quality of life.",
+  "home_ids": [
+    {
+      "$oid": "68a634e9f2c2d29016fce6c4"
+    },
+    {
+      "$oid": "68a636c10af00a5a4f1bf932"
+    },
+    {
+      "$oid": "68a639210af00a5a4f1bf953"
+    },
+    {
+      "$oid": "68a639b20af00a5a4f1bf95e"
+    },
+    {
+      "$oid": "68a63a2a0af00a5a4f1bf969"
+    },
+    {
+      "$oid": "68a634e9f2c2d29016fce6c4"
+    },
+    {
+      "$oid": "68a636c10af00a5a4f1bf932"
+    },
+    {
+      "$oid": "68a639210af00a5a4f1bf953"
+    },
+    {
+      "$oid": "68a639b20af00a5a4f1bf95e"
+    },
+    {
+      "$oid": "68a63a2a0af00a5a4f1bf969"
+    },
+    {
+      "$oid": "68a634e9f2c2d29016fce6c4"
+    },
+    {
+      "$oid": "68a636c10af00a5a4f1bf932"
+    },
+    {
+      "$oid": "68a639210af00a5a4f1bf953"
+    },
+    {
+      "$oid": "68a639b20af00a5a4f1bf95e"
+    },
+    {
+      "$oid": "68a63a2a0af00a5a4f1bf969"
+    }
+  ],
+  "category": "social",
+  "required_skills": [
+    "social_support",
+    "medication",
+    "domestic_support"
+  ],
+  "min_staff_count": 1,
+  "max_staff_count": 1,
+  "duration_hours": 6,
+  "is_24_hour": true,
+  "priority_level": "high",
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:28:04.291Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-21T20:48:26.410Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a63fcfa1391dad179f4060"
+  },
+  "name": "Day Center",
+  "description": "A day support center offers a structured, social environment for individuals with disabilities or complex needs to participate in activities, develop skills, and engage with their community during the daytime. These centers aim to promote personal growth, independence, and social connections through a range of programs, including arts and crafts, vocational training, and community outings.",
+  "home_ids": [
+    {
+      "$oid": "68a63f6ea1391dad179f404a"
+    },
+    {
+      "$oid": "68a63f6ea1391dad179f404a"
+    }
+  ],
+  "category": "social",
+  "required_skills": [
+    "social_support",
+    "medication"
+  ],
+  "min_staff_count": 1,
+  "max_staff_count": 1,
+  "duration_hours": 1,
+  "is_24_hour": false,
+  "priority_level": "medium",
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:36:15.043Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-21T20:42:56.748Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68a64129a1391dad179f408a"
+  },
+  "name": "Community Outreach",
+  "description": "Community outreach is the act of actively engaging with a specific community to provide services, information, or support. It's about building relationships and a positive presence by directly connecting with people where they are, rather than waiting for them to seek help. This can involve anything from educational workshops and health clinics to volunteer programs and advocacy, all with the goal of addressing community needs and fostering positive change.",
+  "home_ids": [
+    {
+      "$oid": "68a64076a1391dad179f4074"
+    },
+    {
+      "$oid": "68a64076a1391dad179f4074"
+    }
+  ],
+  "category": "domestic",
+  "required_skills": [
+    "social_support",
+    "domestic_support"
+  ],
+  "min_staff_count": 1,
+  "max_staff_count": 1,
+  "duration_hours": 1,
+  "is_24_hour": false,
+  "priority_level": "medium",
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-20T21:42:01.031Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-21T20:43:07.204Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68ac5d2b27349153fef9cd8d"
+  },
+  "name": "Administrative Duties",
+  "description": "Run the administrative, managerial and secretarial duties of the company.",
+  "home_ids": [
+    {
+      "$oid": "68ac5b4a27349153fef9cd57"
+    }
+  ],
+  "category": "specialist",
+  "required_skills": [
+    "specialist_care"
+  ],
+  "min_staff_count": 1,
+  "max_staff_count": 10,
+  "duration_hours": 8,
+  "is_24_hour": false,
+  "priority_level": "high",
+  "is_active": true,
+  "created_at": {
+    "$date": "2025-08-25T12:55:07.804Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-25T12:55:07.804Z"
+  },
+  "__v": 0
+}]

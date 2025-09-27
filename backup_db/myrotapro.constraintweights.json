@@ -1,0 +1,271 @@
+[{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b2"
+  },
+  "name": "No Double Booking",
+  "description": "Staff cannot be assigned to overlapping shifts",
+  "category": "hard",
+  "weight": 1000,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "no_double_booking",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.280Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.281Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b3"
+  },
+  "name": "Respect Time Off",
+  "description": "Staff cannot be assigned during approved time off",
+  "category": "hard",
+  "weight": 1000,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "respect_time_off",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b4"
+  },
+  "name": "Minimum Staff Required",
+  "description": "All shifts must meet minimum staffing requirements",
+  "category": "hard",
+  "weight": 1000,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "min_staff_required",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b5"
+  },
+  "name": "Minimum Hours Per Week",
+  "description": "Staff must meet minimum weekly hours based on employment type",
+  "category": "hard",
+  "weight": 800,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "min_hours_per_week",
+  "parameters": {
+    "fulltime": 38,
+    "parttime": 0,
+    "bank": 0
+  },
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b6"
+  },
+  "name": "Maximum Hours Per Week",
+  "description": "Staff should not exceed maximum weekly hours based on employment type",
+  "category": "soft",
+  "weight": 100,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "max_hours_per_week",
+  "parameters": {
+    "fulltime": 80,
+    "parttime": 20,
+    "bank": 20,
+    "overtime_threshold": 40,
+    "overtime_penalty_multiplier": 1.5
+  },
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.282Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b7"
+  },
+  "name": "Consecutive Days Limit",
+  "description": "Limit consecutive working days",
+  "category": "soft",
+  "weight": 30,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "consecutive_days_limit",
+  "parameters": {
+    "max_consecutive": 6
+  },
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b8"
+  },
+  "name": "Preferred Shift Types",
+  "description": "Respect staff shift type preferences",
+  "category": "soft",
+  "weight": 20,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "preferred_shift_types",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9b9"
+  },
+  "name": "Skill Requirements",
+  "description": "Ensure staff have required skills for services",
+  "category": "soft",
+  "weight": 40,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "skill_requirements",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9ba"
+  },
+  "name": "Even Distribution",
+  "description": "Distribute shifts evenly among staff",
+  "category": "soft",
+  "weight": 25,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "even_distribution",
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9bb"
+  },
+  "name": "Employment Type Compliance",
+  "description": "Ensure scheduling respects employment type constraints",
+  "category": "soft",
+  "weight": 60,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "employment_type_compliance",
+  "parameters": {
+    "fulltime_preference": 0.8,
+    "parttime_preference": 0.6,
+    "bank_preference": 0.4
+  },
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68af6acbfe4f465beeb8f9bc"
+  },
+  "name": "Shift Priority",
+  "description": "Prioritize scheduling for certain employment types",
+  "category": "soft",
+  "weight": 50,
+  "is_active": true,
+  "applies_to": "all",
+  "constraint_type": "shift_priority",
+  "parameters": {
+    "priority_order": [
+      "fulltime",
+      "parttime",
+      "bank"
+    ],
+    "parttime_over_bank_boost": 1.5,
+    "fulltime_over_parttime_boost": 1.2
+  },
+  "created_by": {
+    "$oid": "68af6acbfe4f465beeb8f9b1"
+  },
+  "created_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T20:30:03.283Z"
+  },
+  "__v": 0
+}]

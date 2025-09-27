@@ -1,0 +1,1902 @@
+[{
+  "_id": {
+    "$oid": "68a626782b501092d597f32e"
+  },
+  "name": "chris staff",
+  "email": "chris_staff@myrotapro.com",
+  "phone": "+441234567890",
+  "password": "$2a$12$tUCMtW6MnLyQakXUVlERQeN4t0NWKV/tQ1ddDBaz7Fp7wGrcCXRdS",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [],
+  "preferred_shift_types": [],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-20T19:48:08.624Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:13:54.705Z"
+  },
+  "__v": 4,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68af8922bd6ebcc479fb931e"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b734945d3a5a3d316fc5a3"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b735cf5d3a5a3d316fc690"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b83f12508fd4a1b6530277"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a626ed2b501092d597f33a"
+  },
+  "name": "chris senior",
+  "email": "chris_senior@myrotapro.com",
+  "phone": "+441234567890",
+  "password": "$2a$12$7HFJGFq0CcABmC1X8QHOlOrvMLVp/QX87HcOC0/cCjF1z35m9JnIK",
+  "role": "senior_staff",
+  "is_active": true,
+  "skills": [],
+  "preferred_shift_types": [],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-20T19:50:05.847Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:13:54.713Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68af8922bd6ebcc479fb931e"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b83f12508fd4a1b653027d"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a627392b501092d597f346"
+  },
+  "name": "chris manager",
+  "email": "chris_manager@myrotapro.com",
+  "phone": "+441234567890",
+  "password": "$2a$12$DWuGEzxULtuOwd3/xfTmbO4J1MoSLQS8xMGx4D2aAJ0Lge1SBS1H.",
+  "role": "home_manager",
+  "is_active": true,
+  "skills": [],
+  "preferred_shift_types": [],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-20T19:51:21.065Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:25:04.472Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68ac5b4a27349153fef9cd57"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b841b09398a8c8e4dabe94"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a627812b501092d597f353"
+  },
+  "name": "chris admin",
+  "email": "chris_admin@myrotapro.com",
+  "phone": "+441234567890",
+  "password": "$2a$12$1XXo9cRtU9pRLiE7eFgyrOJ0T4rVnzoWjwwk0CcfNUX7YY2Ae94My",
+  "role": "admin",
+  "is_active": true,
+  "skills": [],
+  "preferred_shift_types": [],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-20T19:52:33.857Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:24:40.976Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68ac5b4a27349153fef9cd57"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b841989398a8c8e4dabe21"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff713ca42a634b60d1b"
+  },
+  "name": "John Support",
+  "email": "john_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$G/VKnth18A0Qd64GeidJU..lELBCuWLLZE6wSyp9y5sm0Qz7QiGzK",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:31.594Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:13:54.718Z"
+  },
+  "__v": 5,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true
+    },
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b734ce5d3a5a3d316fc5d0"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b734e15d3a5a3d316fc5ff"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b7360a5d3a5a3d316fc6c4"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b83f12508fd4a1b6530287"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff713ca42a634b60d22"
+  },
+  "name": "Sarah Support",
+  "email": "sarah_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$gufb1grmmR7BxNrrpuB4ruUSJKnfLpPt0SS1kLFGi/YGFGnaAQl2W",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:31.834Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-02T18:18:28.939Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true
+    },
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b734f45d3a5a3d316fc62e"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff813ca42a634b60d25"
+  },
+  "name": "Mike Support",
+  "email": "mike_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$wO33ilA50OqUcLg2FDzOIOyh3T.UJUF2O4YNB8mzVtuPxGWwP5z76",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:32.053Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:13:54.722Z"
+  },
+  "__v": 3,
+  "home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68af8922bd6ebcc479fb931e"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b735045d3a5a3d316fc65e"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b83f12508fd4a1b653028f"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff813ca42a634b60d28"
+  },
+  "name": "Emma Support",
+  "email": "emma_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$NusHQIJkGf5stHoEzZqbfOkeO8ZYjyk7HrkxvpNL8k6T/irTr1eg6",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:32.267Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:13:54.727Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b83f12508fd4a1b6530295"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff813ca42a634b60d2b"
+  },
+  "name": "David Support",
+  "email": "david_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$aYo/IcCMbEt4D5WcRDWBAO/p.SceJlN2jPSZ0xgfIl1uSYg2GtPkG",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:32.481Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-07T20:33:21.865Z"
+  },
+  "__v": 4,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bdec05cb9f4672bf0eb672"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bdec11cb9f4672bf0eb6bb"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime",
+  "default_home_id": null
+},
+{
+  "_id": {
+    "$oid": "68a78ff813ca42a634b60d2e"
+  },
+  "name": "Lisa Support",
+  "email": "lisa_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$L5YbMFPm20rabz0jNn00Rugx210sYDjgsFnXrFeUSRqEhZ5UhsTIi",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:32.700Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff813ca42a634b60d31"
+  },
+  "name": "Tom Support",
+  "email": "tom_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$n3cO9T9eqrHhRsQqhU9hIOaqQH36FzY5QkAHDTov2cnnYF7c9tz2m",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:32.920Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff913ca42a634b60d34"
+  },
+  "name": "Anna Support",
+  "email": "anna_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$yh6iklOI5oMePLfNf3aH3uw3oF0rzgvsiJSXEh/KUTBFS2H1LMNLy",
+  "role": "support_worker",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:33.149Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T16:13:06.299Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "parttime"
+},
+{
+  "_id": {
+    "$oid": "68a78ff913ca42a634b60d40"
+  },
+  "name": "Sarah Senior",
+  "email": "sarah_senior@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$Bk2DTveyOUv.WLzgrnuA9Oi1MR3Cp6yfMnJkZfFtjBDfpL45ul8q6",
+  "role": "senior_staff",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:33.998Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ffa13ca42a634b60d43"
+  },
+  "name": "Mike Senior",
+  "email": "mike_senior@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$ulCO4AdaIQeMi/hTy.zlIuDfh1vQIea4yySE.N/4tBL6e1ThcYlFa",
+  "role": "senior_staff",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:34.210Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68af8922bd6ebcc479fb931e"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ffa13ca42a634b60d46"
+  },
+  "name": "Emma Senior",
+  "email": "emma_senior@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$NLGFsd5bktly1yjRKfXr0O6EigI1CBpADAWTqiHR6GVP3Fm94sdqG",
+  "role": "senior_staff",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:34.422Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ffa13ca42a634b60d49"
+  },
+  "name": "David Senior",
+  "email": "david_senior@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$KfFv0XvSJmJ26cXdcCyFMOEKW9PvWavDiuF1dgYYGPCbnYihBtkQy",
+  "role": "senior_staff",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:34.633Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-27T22:39:30.306Z"
+  },
+  "__v": 1,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ffa13ca42a634b60d4c"
+  },
+  "name": "John Manager",
+  "email": "john_manager@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$jWltfZQfpvisFxNMAfd76ugkRLiw3fM7dE6DqxIkqbi.U5qzzwQVO",
+  "role": "home_manager",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:34.844Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:25:13.095Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68ac5b4a27349153fef9cd57"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b841b99398a8c8e4dabecf"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68a78ffb13ca42a634b60d4f"
+  },
+  "name": "John Admin",
+  "email": "john_admin@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$naB/2q9yuh5yzJ65H9OHq.u9CuvlIKcnxAXgraXcBsKSrM6FemvrO",
+  "role": "admin",
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-21T21:30:35.060Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T13:24:48.644Z"
+  },
+  "__v": 2,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68ac5b4a27349153fef9cd57"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68b841a09398a8c8e4dabe5a"
+      }
+    }
+  ],
+  "min_hours_per_week": 40,
+  "type": "fulltime"
+},
+{
+  "_id": {
+    "$oid": "68b0d1a83a156bb2f93388b5"
+  },
+  "name": "Gentle Staff 3",
+  "email": "gentle_house_staff_3@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$3/.1pXnzWfRah12xJ3AffuiZs3LeVgZPSGdeXOVqg7TzfsoW3n2o2",
+  "role": "support_worker",
+  "type": "fulltime",
+  "min_hours_per_week": 40,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a83a156bb2f93388b6"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-28T22:01:12.551Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:12.551Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1a83a156bb2f93388c1"
+  },
+  "name": "Gentle Part Time 1",
+  "email": "gentle_house_parttime_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$IuCEL3SJV9Mdz3lZxqoRO.l/d2r7l.Plo5Pg/Z4.zZwCf9KdX./kK",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a83a156bb2f93388c2"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:12.810Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:12.810Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1a93a156bb2f93388c7"
+  },
+  "name": "Gentle Part Time 2",
+  "email": "gentle_house_parttime_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$5Ypc8/bEjHMLs9r43W/A7uccODGkM3CAhATKt2n8nBKAG6U3X8LMu",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a93a156bb2f93388c8"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:13.029Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:13.029Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1a93a156bb2f93388ca"
+  },
+  "name": "Gentle Bank 1",
+  "email": "gentle_house_bank_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$C0bkaTmaPwFPH/AZG8Ixi.8m4bbSDhIg2HHBM1.Re7GXrDqbz52d2",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a93a156bb2f93388cb"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb021be52ceaa687a824a5"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:13.246Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:30:35.387Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1a93a156bb2f93388cd"
+  },
+  "name": "Gentle Bank 2",
+  "email": "gentle_house_bank_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$Fox4oBvP0ABAiCSNRIJzr.S9wQRh0zXy2JIjgr44cKzRp88nbkmMG",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a93a156bb2f93388ce"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb0227e52ceaa687a824e4"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a63a2a0af00a5a4f1bf969"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:13.464Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:30:47.048Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1a93a156bb2f93388d3"
+  },
+  "name": "Happy Staff 3",
+  "email": "happy_house_staff_3@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$SyFK7h.j2B.GDyBp3cRiIuBL.d4hs9LTVe7PuiJN3fQ1SLksNop0.",
+  "role": "support_worker",
+  "type": "fulltime",
+  "min_hours_per_week": 40,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a93a156bb2f93388d4"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 40,
+  "created_at": {
+    "$date": "2025-08-28T22:01:13.682Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:13.682Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1a93a156bb2f93388d6"
+  },
+  "name": "Happy Part Time 1",
+  "email": "happy_house_parttime_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$qacVqYylJrJhr4j3lg.nROkvzNbk9h535oYBL6VLmXSHauZnyG4uy",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1a93a156bb2f93388d7"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:13.908Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:13.908Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1aa3a156bb2f93388d9"
+  },
+  "name": "Happy Part Time 2",
+  "email": "happy_house_parttime_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$CEl1XJOZf/wdoL8zIf33bOD81r1ntHI29UH4ysoO7JRanM7jQBBiG",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1aa3a156bb2f93388da"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:14.129Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:14.129Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1aa3a156bb2f93388dc"
+  },
+  "name": "Happy Bank 1",
+  "email": "happy_house_bank_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$exbOZ78cikSTzarwiiY3keHQYTW/tnwRJhQVPgf2VoBJDBWS5sVYW",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1aa3a156bb2f93388dd"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb0234e52ceaa687a82524"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:14.346Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:31:00.813Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1aa3a156bb2f93388df"
+  },
+  "name": "Happy Bank 2",
+  "email": "happy_house_bank_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$Q..UbLjT6lHlpntTgZMHqeOgw79HIdsMWTGnbdRCoddyVLEnmCjiW",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1aa3a156bb2f93388e0"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb0258e52ceaa687a82565"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639210af00a5a4f1bf953"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:14.563Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:31:36.589Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1aa3a156bb2f93388e7"
+  },
+  "name": "Hope Part Time 1",
+  "email": "hope_house_parttime_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$0Y.aU6wPT/2/pO7Vt3QEHu2pnUwNEimBZJ7I9Ki6IuakXtgL7i36O",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1aa3a156bb2f93388e8"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:14.781Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:14.781Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1aa3a156bb2f93388ea"
+  },
+  "name": "Hope Part Time 2",
+  "email": "hope_house_parttime_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$TZB4u15nNuUWaFFcnPDBEOaOykb8I6z5pqoR7JwlgKXjgBTDpDoHm",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1aa3a156bb2f93388eb"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:14.996Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:14.996Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1ab3a156bb2f93388ed"
+  },
+  "name": "Hope Bank 1",
+  "email": "hope_house_bank_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$OCGFfLRdxFVnefFw4JRyTuSU/nlkf5cu7nrgXETGlJql5ulmtLwS.",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ab3a156bb2f93388ee"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb026be52ceaa687a825a7"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:15.208Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T16:13:06.881Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1ab3a156bb2f93388f0"
+  },
+  "name": "Hope Bank 2",
+  "email": "hope_house_bank_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$qQDFFMizheGg8Ul.OI7Ku.W2uAX3eYr7IjuupqJPpB8PMS4jhtQqW",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a634e9f2c2d29016fce6c4"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ab3a156bb2f93388f1"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63a2a0af00a5a4f1bf969"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb0278e52ceaa687a825ea"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a634e9f2c2d29016fce6c4"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:15.421Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:32:08.687Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1ab3a156bb2f93388f8"
+  },
+  "name": "Love Part Time 1",
+  "email": "love_house_parttime_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$F4gq2LhY6LPYbYayrdSmbu0Bw3faKFSKY7YgKqN1q/gj2AQHzTlhO",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ab3a156bb2f93388f9"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:15.644Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:15.644Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1ab3a156bb2f93388fb"
+  },
+  "name": "Love Part Time 2",
+  "email": "love_house_parttime_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$9qU8Qz.HVKMdgG.pg4QtpuNvCPRUABu9QMN94saUhOGu559PkO176",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ab3a156bb2f93388fc"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:15.858Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:15.858Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1ac3a156bb2f93388fe"
+  },
+  "name": "Love Bank 1",
+  "email": "love_house_bank_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$lfFsz.uISxbQXH5hgSf1beuro7YtSw7w4PJBFjppibotNJ5yzgHAa",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ac3a156bb2f93388ff"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb02d0e52ceaa687a8262e"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:16.073Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:33:36.605Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1ac3a156bb2f9338901"
+  },
+  "name": "Love Bank 2",
+  "email": "love_house_bank_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$yOtxMgsAeu9K6sD1Y9Mcy.wijODn0vwOj1C8XO2GSj9EtjaflopkG",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ac3a156bb2f9338902"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a63f6ea1391dad179f404a"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb02e1e52ceaa687a82673"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:16.287Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:33:53.910Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1ac3a156bb2f9338908"
+  },
+  "name": "Peace Part Time 1",
+  "email": "peace_home_parttime_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$6sFcMVA.UN0NS2o1/biQ9.OiZC7zodcFOwANw45C4sKiY72lUKHvq",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ac3a156bb2f9338909"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:16.505Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:16.505Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1ac3a156bb2f933890b"
+  },
+  "name": "Peace Part Time 2",
+  "email": "peace_home_parttime_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$d1QoCfLhwXaPULWRPpgKVOeZSxNjob2oQA3WwgpUIj03lQl4NLORS",
+  "role": "support_worker",
+  "type": "parttime",
+  "min_hours_per_week": 20,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ac3a156bb2f933890c"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 30,
+  "created_at": {
+    "$date": "2025-08-28T22:01:16.721Z"
+  },
+  "updated_at": {
+    "$date": "2025-08-28T22:01:16.721Z"
+  },
+  "__v": 0
+},
+{
+  "_id": {
+    "$oid": "68b0d1ac3a156bb2f933890e"
+  },
+  "name": "Peace Bank 1",
+  "email": "peace_home_bank_1@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$w4DjUHDIBrxLDBC8ceEkrOa8xEBeL5NJRUop9CVtJwTRa3bYSf08y",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ac3a156bb2f933890f"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a639210af00a5a4f1bf953"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb0316e52ceaa687a826b9"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:16.937Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:34:46.482Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b0d1ad3a156bb2f9338911"
+  },
+  "name": "Peace Bank 2",
+  "email": "peace_home_bank_2@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$9t7AqAsm9Y433wUzShC2AOGMCFJqCPzmv/L3F6yXQ8zpGMdw/Gjrm",
+  "role": "support_worker",
+  "type": "bank",
+  "min_hours_per_week": 0,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a636c10af00a5a4f1bf932"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b0d1ad3a156bb2f9338912"
+      }
+    },
+    {
+      "home_id": {
+        "$oid": "68a64076a1391dad179f4074"
+      },
+      "is_default": false,
+      "_id": {
+        "$oid": "68bb031fe52ceaa687a82700"
+      }
+    }
+  ],
+  "default_home_id": {
+    "$oid": "68a636c10af00a5a4f1bf932"
+  },
+  "is_active": true,
+  "skills": [
+    "personal_care",
+    "domestic_support",
+    "social_support"
+  ],
+  "preferred_shift_types": [
+    "morning",
+    "afternoon"
+  ],
+  "max_hours_per_week": 20,
+  "created_at": {
+    "$date": "2025-08-28T22:01:17.153Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-05T15:34:55.920Z"
+  },
+  "__v": 1
+},
+{
+  "_id": {
+    "$oid": "68b865fc70b98b0708b47ba5"
+  },
+  "name": "Zita Support",
+  "email": "zita_support@rcs.com",
+  "phone": "+44123456789",
+  "password": "$2a$12$fRlkGZkBcbH86F2X3w/hwukQQmeOkor/flyFYypjy2vZFn0pHV3Hu",
+  "role": "support_worker",
+  "type": "fulltime",
+  "min_hours_per_week": 40,
+  "is_active": true,
+  "skills": [],
+  "preferred_shift_types": [],
+  "max_hours_per_week": 40,
+  "homes": [
+    {
+      "home_id": {
+        "$oid": "68a639b20af00a5a4f1bf95e"
+      },
+      "is_default": true,
+      "_id": {
+        "$oid": "68b8663370b98b0708b47cdf"
+      }
+    }
+  ],
+  "created_at": {
+    "$date": "2025-09-03T15:59:56.372Z"
+  },
+  "updated_at": {
+    "$date": "2025-09-03T16:00:51.702Z"
+  },
+  "__v": 1,
+  "default_home_id": {
+    "$oid": "68a639b20af00a5a4f1bf95e"
+  }
+}]
