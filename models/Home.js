@@ -31,7 +31,7 @@ const homeSchema = new mongoose.Schema({
   manager_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'Manager is required']
+    required: false // Made optional to allow initial setup
   },
   contact_info: {
     phone: {

@@ -29,6 +29,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // Create new home
 router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
+    // Ensure manager_id is provided for normal home creation
+    if (!req.body.manager_id) {
+      return res.status(400).json({ error: 'Manager is required for home creation' });
+    }
+    
     const home = new Home(req.body);
     await home.save();
     
@@ -37,8 +42,8 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
     
     res.status(201).json(populatedHome);
   } catch (error) {
-
-    res.status(400).json({ error: 'Failed to create home' });
+    console.error('Home creation error:', error);
+    res.status(400).json({ error: 'Failed to create home', details: error.message });
   }
 });
 

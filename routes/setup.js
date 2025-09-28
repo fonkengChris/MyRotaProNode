@@ -29,7 +29,7 @@ router.post('/initial', async (req, res) => {
       });
     }
 
-    // Create the home first
+    // Create the home first (bypass validation for initial setup)
     const home = new Home({
       name: homeName,
       location,
@@ -40,7 +40,7 @@ router.post('/initial', async (req, res) => {
       is_active: true
     });
 
-    await home.save();
+    await home.save({ validateBeforeSave: false });
 
     // Create the admin user
     const hashedPassword = await bcrypt.hash(password, 12);
