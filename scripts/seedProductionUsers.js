@@ -281,24 +281,24 @@ async function seedProductionUsers() {
 
     console.log(`\n👥 Total users to create: ${usersToCreate.length}`);
 
-    // Create users in batches to avoid memory issues
-    const batchSize = 50;
+    // Create users individually to ensure password hashing works
     let createdCount = 0;
+    let skippedCount = 0;
 
-    for (let i = 0; i < usersToCreate.length; i += batchSize) {
-      const batch = usersToCreate.slice(i, i + batchSize);
-      
+    for (const userData of usersToCreate) {
       try {
-        const createdUsers = await User.insertMany(batch, { ordered: false });
-        createdCount += createdUsers.length;
-        console.log(`✅ Created batch ${Math.floor(i / batchSize) + 1}: ${createdUsers.length} users`);
+        // Create user individually to trigger pre-save middleware for password hashing
+        const user = new User(userData);
+        await user.save();
+        createdCount++;
+        console.log(`✅ Created: ${userData.email}`);
       } catch (error) {
         if (error.code === 11000) {
           // Handle duplicate key errors
-          console.log(`⚠️ Some users in batch ${Math.floor(i / batchSize) + 1} already exist, skipping duplicates`);
-          createdCount += batch.length - error.result.result.writeErrors.length;
+          skippedCount++;
+          console.log(`⚠️ Skipped (already exists): ${userData.email}`);
         } else {
-          console.error(`❌ Error creating batch ${Math.floor(i / batchSize) + 1}:`, error.message);
+          console.error(`❌ Error creating ${userData.email}:`, error.message);
         }
       }
     }
