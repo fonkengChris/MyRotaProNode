@@ -3,8 +3,8 @@ const User = require('../models/User');
 const Home = require('../models/Home');
 const Service = require('../models/Service');
 
-// Production MongoDB URI
-const PRODUCTION_MONGODB_URI = 'mongodb+srv://chrisfonkeng:chrisfonkeng123@cluster0.8qj8x.mongodb.net/myrotapro?retryWrites=true&w=majority';
+// Use environment variable for MongoDB URI
+const PRODUCTION_MONGODB_URI = process.env.MONGODB_URI || 'mongodb+srv://chrisfonkeng:chrisfonkeng123@cluster0.8qj8x.mongodb.net/myrotapro?retryWrites=true&w=majority';
 
 async function verifySeededUsers() {
   try {
