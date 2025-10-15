@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - main
+      - master
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
+      - master
 
 env:
   DOCKER_IMAGE: christianesendege/my-rota-pro-backend
@@ -37,6 +39,7 @@ jobs:
           images: ${{ env.DOCKER_IMAGE }}
           tags: |
             type=ref,event=branch
+            type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
@@ -55,4 +58,3 @@ jobs:
 
       - name: Image digest
         run: echo "Image pushed with digest ${{ steps.build.outputs.digest }}"
-
