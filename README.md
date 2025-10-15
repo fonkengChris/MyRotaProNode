@@ -12,6 +12,7 @@ A comprehensive Node.js backend for the MyRotaPro rota management system, design
 - **Availability Tracking**: Staff availability and preference management
 - **Time Off Management**: Request approval workflow
 - **Real-time Validation**: Overlap detection and constraint checking
+- **CI/CD Pipeline**: Automated Docker builds with GitHub Actions 🚀
 
 ## 🔄 Recent Schema Updates
 
