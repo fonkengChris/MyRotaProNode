@@ -325,3 +325,4 @@ For support and questions:
 - **Reporting**: Advanced analytics and reporting features
 - **Integration**: Third-party calendar and HR system integration
 # Trigger rebuild Wed Oct 15 06:37:20 PM BST 2025
+# Testing Docker Hub secrets - Wed Oct 15 06:59:25 PM BST 2025
