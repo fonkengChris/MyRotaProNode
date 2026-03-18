@@ -62,8 +62,8 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete user
-router.delete('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+// Delete user (admin only)
+router.delete('/:id', requireRole(['admin']), async (req, res) => {
   try {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {
