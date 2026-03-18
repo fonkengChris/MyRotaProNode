@@ -2,7 +2,7 @@
 const requiredEnvVars = {
   production: ['MONGODB_URI', 'JWT_SECRET'],
   development: ['MONGODB_URI'],
-  test: ['MONGODB_URI']
+  test: [] // Tests use MongoDB Memory Server, no URI needed
 }
 
 // Validate environment variables

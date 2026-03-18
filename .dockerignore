@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Testing
+coverage
+.nyc_output
+*.test.js
+*.spec.js
+__tests__
+
+# Development
+.env.development
+.env.development.local
+.env.test
+*.md
+docs
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs (will be created in container)
+logs/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.temp
+
+# Scripts (not needed in production)
+scripts/*.js
+!scripts/init-mongo.js
+
+# Backup data (not needed in container)
+backup_db
+

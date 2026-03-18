@@ -35,6 +35,10 @@ const { authenticateToken } = require('./middleware/auth');
 const app = express();
 const PORT = config.port;
 
+// Trust proxy (needed for Heroku / reverse proxies)
+// Enables correct protocol/IP detection and avoids some cookie/security edge cases.
+app.set('trust proxy', 1);
+
 // Security middleware (only in production)
 if (isProduction()) {
   app.use(helmet({
@@ -49,7 +53,38 @@ if (isProduction()) {
   }));
 }
 
-// Rate limiting
+// Compression middleware
+app.use(compression());
+
+// CORS configuration
+const rawCorsOrigin = config.cors.origin;
+const allowedOrigins = String(rawCorsOrigin || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const isWildcardCors = allowedOrigins.includes('*');
+
+const corsOptions = {
+  origin: (requestOrigin, cb) => {
+    // Non-browser clients (curl, health checks) may not send Origin.
+    if (!requestOrigin) return cb(null, true);
+
+    if (isWildcardCors) return cb(null, true);
+    if (allowedOrigins.includes(requestOrigin)) return cb(null, true);
+
+    return cb(null, false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// Rate limiting (after CORS so 429 responses include CORS headers)
 const limiter = rateLimit({
   windowMs: config.security.rateLimitWindowMs,
   max: config.security.rateLimitMaxRequests,
@@ -59,34 +94,29 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Compression middleware
-app.use(compression());
-
-// CORS configuration
-const corsOptions = {
-  origin: config.cors.origin,
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
-
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Database connection
-mongoose.connect(config.mongodb.uri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  maxPoolSize: 10,
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000,
-})
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch(err => {
-  console.error('❌ MongoDB connection error:', err);
-  process.exit(1);
-});
+// Database connection - skip if already connected (for tests) or in test mode
+// readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
+const isTestMode = process.env.NODE_ENV === 'test';
+const isDisconnected = mongoose.connection.readyState === 0;
+
+if (!isTestMode && isDisconnected) {
+  mongoose.connect(config.mongodb.uri, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    maxPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+  })
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => {
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
+  });
+}
 
 // Routes
 app.use('/api/setup', setupRoutes);
@@ -133,16 +163,18 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 Environment: ${config.env}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-  
-  if (isDevelopment()) {
-    console.log(`🌐 CORS Origin: ${config.cors.origin}`);
-    console.log(`🗄️  Database: ${config.mongodb.uri}`);
-  }
-});
+// Start server - skip in test mode (supertest handles the app directly)
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📱 Environment: ${config.env}`);
+    console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
+    
+    if (isDevelopment()) {
+      console.log(`🌐 CORS Origin: ${config.cors.origin}`);
+      console.log(`🗄️  Database: ${config.mongodb.uri}`);
+    }
+  });
+}
 
 module.exports = app;

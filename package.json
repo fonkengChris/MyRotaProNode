@@ -10,8 +10,11 @@
     "dev": "NODE_ENV=development nodemon server.js",
     "dev:prod": "NODE_ENV=production nodemon server.js",
     "test": "NODE_ENV=test jest",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:coverage": "NODE_ENV=test jest --coverage",
     "create-test-users": "node scripts/createTestUsers.js",
     "create-weekly-shifts": "node scripts/createWeeklyShifts.js",
+    "restore-backup": "node scripts/restoreBackup.js",
     "build": "echo 'No build step required for Node.js backend'",
     "postinstall": "echo 'Backend dependencies installed successfully'",
     "heroku-postbuild": "echo 'Heroku build completed'"
@@ -43,6 +46,8 @@
   },
   "devDependencies": {
     "jest": "^29.6.2",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "mongodb-memory-server": "^9.1.3",
+    "supertest": "^6.3.3"
   }
 }
