@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
+const Shift = require('../models/Shift');
+const mongoose = require('mongoose');
 const { requireRole, requireHomeAccess } = require('../middleware/auth');
 
 // Get all users (filtered by home for non-admins)
@@ -65,6 +67,17 @@ router.put('/:id', async (req, res) => {
 // Delete user (admin only)
 router.delete('/:id', requireRole(['admin']), async (req, res) => {
   try {
+    const userId = req.params.id
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId
+
+    // Cascade cleanup: remove deleted user from any shift assignments.
+    // Without this, existing shifts can keep `assigned_staff` entries referencing non-existent users,
+    // which renders as "Unknown Staff" in the rota UI.
+    await Shift.updateMany(
+      { 'assigned_staff.user_id': userIdObj },
+      { $pull: { assigned_staff: { user_id: userIdObj } } }
+    )
+
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

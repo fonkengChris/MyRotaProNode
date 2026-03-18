@@ -48,6 +48,8 @@ router.post('/generate-rota', [
     // Validate date range
     const startDate = new Date(week_start_date);
     const endDate = new Date(week_end_date);
+    const mongoose = require('mongoose');
+    const homeIdObjs = homeIdArray.map(homeId => new mongoose.Types.ObjectId(homeId));
     
     if (startDate >= endDate) {
       return res.status(400).json({ 
@@ -71,8 +73,6 @@ router.post('/generate-rota', [
     let shifts = existing_shifts;
     if (shifts.length === 0) {
       const Shift = require('../models/Shift');
-      const mongoose = require('mongoose');
-      const homeIdObjs = homeIdArray.map(homeId => new mongoose.Types.ObjectId(homeId));
       
       shifts = await Shift.find({
         home_id: { $in: homeIdObjs },
@@ -84,6 +84,57 @@ router.post('/generate-rota', [
           error: 'No shifts found for the specified week and homes',
           details: ['Please create shifts in the rota grid before using AI generation']
         });
+      }
+    }
+
+    // Cleanup: remove shift assignments pointing to deleted users.
+    // This prevents the rota UI from showing "Unknown Staff" when users were deleted
+    // but their IDs remained inside `shift.assigned_staff`.
+    {
+      const Shift = require('../models/Shift');
+      const User = require('../models/User');
+
+      const assignedUserIdSet = new Set();
+      for (const shift of shifts || []) {
+        const assignments = shift.assigned_staff || []
+        for (const a of assignments) {
+          if (!a || !a.user_id) continue
+          assignedUserIdSet.add(a.user_id.toString())
+        }
+      }
+
+      const assignedUserIds = Array.from(assignedUserIdSet);
+      const assignedUserObjs = assignedUserIds
+        .filter(id => mongoose.Types.ObjectId.isValid(id))
+        .map(id => new mongoose.Types.ObjectId(id));
+
+      if (assignedUserObjs.length > 0) {
+        const existingUsers = await User.find({ _id: { $in: assignedUserObjs } }, { _id: 1 }).lean();
+        const validUserIdSet = new Set(existingUsers.map(u => u._id.toString()));
+        const invalidUserIds = assignedUserIds.filter(id => !validUserIdSet.has(id));
+
+        if (invalidUserIds.length > 0) {
+          const invalidUserObjs = invalidUserIds.map(id => new mongoose.Types.ObjectId(id));
+
+          await Shift.updateMany(
+            {
+              home_id: { $in: homeIdObjs },
+              date: { $gte: week_start_date, $lte: week_end_date },
+              'assigned_staff.user_id': { $in: invalidUserObjs }
+            },
+            {
+              $pull: {
+                assigned_staff: { user_id: { $in: invalidUserObjs } }
+              }
+            }
+          )
+
+          // Also clean the in-memory shifts passed to the solver.
+          for (const shift of shifts || []) {
+            if (!shift.assigned_staff) continue
+            shift.assigned_staff = shift.assigned_staff.filter(a => a && a.user_id && validUserIdSet.has(a.user_id.toString()))
+          }
+        }
       }
     }
 
