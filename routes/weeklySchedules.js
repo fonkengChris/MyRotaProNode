@@ -2,12 +2,22 @@ const express = require('express');
 const router = express.Router();
 const WeeklySchedule = require('../models/WeeklySchedule');
 const { requireRole } = require('../middleware/auth');
+const mongoose = require('mongoose');
 
 // Get weekly schedule by home ID
 router.get('/home/:homeId', async (req, res) => {
   try {
+    const { homeId } = req.params;
+    // Guard against `homeId=null` coming from the client.
+    if (!homeId || homeId === 'null' || homeId === 'undefined') {
+      return res.status(400).json({ error: 'Valid homeId is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(homeId)) {
+      return res.status(400).json({ error: 'Invalid homeId' });
+    }
+
     const schedule = await WeeklySchedule.findOne({ 
-      home_id: req.params.homeId,
+      home_id: homeId,
       is_active: true 
     }).populate('schedule.monday.shifts.service_id', 'name category')
       .populate('schedule.tuesday.shifts.service_id', 'name category')

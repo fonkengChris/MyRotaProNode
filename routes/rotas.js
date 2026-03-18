@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Rota = require('../models/Rota');
 const { requireRole } = require('../middleware/auth');
+const mongoose = require('mongoose');
 
 // Get all rotas
 router.get('/', async (req, res) => {
@@ -9,7 +10,16 @@ router.get('/', async (req, res) => {
     const { home_id, service_id, status, week_start_date, week_end_date } = req.query;
     const filter = {};
     
-    if (home_id) filter.home_id = home_id;
+    // Guard against `home_id=null` coming from the client. Mongoose would throw a CastError otherwise.
+    if (home_id === 'null' || home_id === 'undefined') {
+      return res.status(400).json({ error: 'Valid home_id is required' });
+    }
+    if (home_id && !mongoose.Types.ObjectId.isValid(home_id)) {
+      return res.status(400).json({ error: 'Invalid home_id' });
+    }
+    if (home_id) {
+      filter.home_id = home_id;
+    }
     if (service_id) filter.service_id = service_id;
     if (status) filter.status = status;
     if (week_start_date || week_end_date) {

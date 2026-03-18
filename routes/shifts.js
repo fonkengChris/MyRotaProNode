@@ -440,6 +440,14 @@ router.get('/conflicts/check', requireRole(['admin', 'home_manager', 'senior_sta
   try {
     const { home_id, start_date, end_date } = req.query;
     
+    const mongoose = require('mongoose');
+    if (!home_id || home_id === 'null' || home_id === 'undefined') {
+      return res.status(400).json({ error: 'Valid home_id is required' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(home_id)) {
+      return res.status(400).json({ error: 'Invalid home_id' });
+    }
+
     if (!home_id || !start_date || !end_date) {
       return res.status(400).json({ 
         error: 'Missing required parameters: home_id, start_date, end_date' 
