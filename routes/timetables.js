@@ -7,6 +7,15 @@ const { requireRole } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const SchedulingConflictService = require('../services/schedulingConflictService');
 
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    })
+  ]);
+}
+
 // Get all timetables accessible to the user
 router.get('/', async (req, res) => {
   try {
@@ -432,6 +441,7 @@ async function generateTimetableAsync(timetableId, userId) {
     const generationErrors = [];
     
     // Generate rota for each week
+    const perWeekGenerationTimeoutMs = 2 * 60 * 1000; // 2 minutes per week
     for (let week = 0; week < timetable.total_weeks; week++) {
       try {
         const weekStart = new Date(timetable.start_date);
@@ -443,12 +453,16 @@ async function generateTimetableAsync(timetableId, userId) {
         console.log(`Generating week ${week + 1}/${timetable.total_weeks}: ${weekStart.toISOString().split('T')[0]} to ${weekEnd.toISOString().split('T')[0]}`);
         
         // Generate rota for this week using AI Solver
-        const result = await aiSolver.generateRota(
-          weekStart,
-          weekEnd,
-          timetable.home_ids,
-          timetable.service_id,
-          [] // Don't pass existing shifts for timetable generation
+        const result = await withTimeout(
+          aiSolver.generateRota(
+            weekStart,
+            weekEnd,
+            timetable.home_ids,
+            timetable.service_id,
+            [] // Don't pass existing shifts for timetable generation
+          ),
+          perWeekGenerationTimeoutMs,
+          `Week ${week + 1} generation timed out after ${perWeekGenerationTimeoutMs / 1000} seconds`
         );
         
         if (!result.success) {
