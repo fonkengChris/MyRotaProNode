@@ -1,8 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const Rota = require('../models/Rota');
+const Shift = require('../models/Shift');
 const { requireRole } = require('../middleware/auth');
 const mongoose = require('mongoose');
+
+function toYyyyMmDd(date) {
+  const d = new Date(date);
+  return d.toISOString().split('T')[0];
+}
 
 // Get all rotas
 router.get('/', async (req, res) => {
@@ -90,11 +96,40 @@ router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async
 // Delete rota
 router.delete('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
   try {
-    const rota = await Rota.findByIdAndDelete(req.params.id);
+    const rota = await Rota.findById(req.params.id).select('shifts home_id service_id week_start_date week_end_date status');
     if (!rota) {
       return res.status(404).json({ error: 'Rota not found' });
     }
-    res.json({ message: 'Rota deleted successfully' });
+
+    // Unassign staff from all shifts linked to this rota before deleting it.
+    // Fallback to week+home+service lookup when explicit shift refs are missing.
+    const referencedShiftIds = (rota.shifts || []).filter(id => mongoose.Types.ObjectId.isValid(id));
+    let unassignFilter;
+
+    if (referencedShiftIds.length > 0) {
+      unassignFilter = { _id: { $in: referencedShiftIds } };
+    } else {
+      unassignFilter = {
+        home_id: rota.home_id,
+        service_id: rota.service_id,
+        date: {
+          $gte: toYyyyMmDd(rota.week_start_date),
+          $lte: toYyyyMmDd(rota.week_end_date)
+        }
+      };
+    }
+
+    const unassignResult = await Shift.updateMany(
+      unassignFilter,
+      { $set: { assigned_staff: [] } }
+    );
+
+    await Rota.findByIdAndDelete(req.params.id);
+
+    res.json({
+      message: 'Rota deleted and shift assignments cleared successfully',
+      shifts_unassigned: unassignResult.modifiedCount || 0
+    });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete rota' });
   }
