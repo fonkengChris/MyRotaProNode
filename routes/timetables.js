@@ -132,11 +132,14 @@ router.post('/', [
       return res.status(400).json({ error: 'End date must be after start date' });
     }
     
-    // Calculate actual weeks
-    const actualWeeks = Math.ceil((end - start) / (7 * 24 * 60 * 60 * 1000));
-    if (actualWeeks !== total_weeks) {
+    // Calculate actual weeks from an inclusive date range.
+    // This avoids edge cases when end_date is sent as end-of-day timestamp.
+    const millisecondsPerWeek = 7 * 24 * 60 * 60 * 1000;
+    const actualWeeks = Math.floor((end - start) / millisecondsPerWeek) + 1;
+    const requestedWeeks = Number(total_weeks);
+    if (actualWeeks !== requestedWeeks) {
       return res.status(400).json({ 
-        error: `Date range spans ${actualWeeks} weeks, but ${total_weeks} weeks specified` 
+        error: `Date range spans ${actualWeeks} weeks, but ${requestedWeeks} weeks specified` 
       });
     }
     
@@ -148,7 +151,7 @@ router.post('/', [
       service_id,
       start_date: start,
       end_date: end,
-      total_weeks,
+      total_weeks: requestedWeeks,
       generated_by: req.user._id,
       status: 'draft',
       total_shifts: 0,
