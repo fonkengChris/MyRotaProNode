@@ -349,7 +349,7 @@ router.post('/:id/archive', [
   }
 });
 
-// Delete timetable (only draft status)
+// Delete timetable (draft, generated, published, or archived — not while generating)
 router.delete('/:id', [
   requireRole(['admin', 'home_manager'])
 ], async (req, res) => {
@@ -360,8 +360,8 @@ router.delete('/:id', [
       return res.status(404).json({ error: 'Timetable not found' });
     }
     
-    if (timetable.status !== 'draft') {
-      return res.status(400).json({ error: 'Can only delete draft timetables' });
+    if (timetable.status === 'generating') {
+      return res.status(400).json({ error: 'Cannot delete a timetable while generation is in progress' });
     }
     
     // Check if user can modify this timetable
