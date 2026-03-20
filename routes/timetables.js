@@ -30,41 +30,81 @@ function toYmd(value) {
 
 /** Normalize snapshot shift_id (ObjectId, string, populated ref, { id }) */
 function normalizeShiftIdString(raw) {
-  if (raw == null) return null;
-  if (typeof raw === 'string') {
-    return mongoose.Types.ObjectId.isValid(raw) ? raw : null;
-  }
-  if (typeof raw === 'object') {
-    if (raw._id != null) return normalizeShiftIdString(raw._id);
-    if (raw.id != null) return normalizeShiftIdString(raw.id);
-    if (raw.$oid != null) return normalizeShiftIdString(raw.$oid);
-  }
-  try {
-    const s = String(raw);
-    return mongoose.Types.ObjectId.isValid(s) ? s : null;
-  } catch {
-    return null;
-  }
+  const visited = new WeakSet();
+
+  const normalize = (value, depth) => {
+    if (value == null) return null;
+    if (depth > 6) return null;
+
+    if (typeof value === 'string') {
+      return mongoose.Types.ObjectId.isValid(value) ? value : null;
+    }
+
+    if (typeof value === 'object') {
+      if (visited.has(value)) return null;
+      visited.add(value);
+
+      if (value._id != null && value._id !== value) {
+        return normalize(value._id, depth + 1);
+      }
+      if (value.id != null && value.id !== value) {
+        return normalize(value.id, depth + 1);
+      }
+      if (value.$oid != null && value.$oid !== value) {
+        return normalize(value.$oid, depth + 1);
+      }
+    }
+
+    try {
+      const s = String(value);
+      return mongoose.Types.ObjectId.isValid(s) ? s : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return normalize(raw, 0);
 }
 
 function normalizeObjectIdString(raw) {
-  if (raw == null) return null;
-  if (typeof raw === 'string') {
-    return mongoose.Types.ObjectId.isValid(raw) ? raw : null;
-  }
-  // mongoose ObjectId
-  if (raw instanceof mongoose.Types.ObjectId) return raw.toString();
-  if (typeof raw === 'object') {
-    if (raw._id != null) return normalizeObjectIdString(raw._id);
-    if (raw.id != null) return normalizeObjectIdString(raw.id);
-    if (raw.$oid != null) return normalizeObjectIdString(raw.$oid);
-  }
-  try {
-    const s = String(raw);
-    return mongoose.Types.ObjectId.isValid(s) ? s : null;
-  } catch {
-    return null;
-  }
+  const visited = new WeakSet();
+
+  const normalize = (value, depth) => {
+    if (value == null) return null;
+    if (depth > 6) return null;
+
+    if (typeof value === 'string') {
+      return mongoose.Types.ObjectId.isValid(value) ? value : null;
+    }
+
+    if (value instanceof mongoose.Types.ObjectId) {
+      return value.toString();
+    }
+
+    if (typeof value === 'object') {
+      if (visited.has(value)) return null;
+      visited.add(value);
+
+      if (value._id != null && value._id !== value) {
+        return normalize(value._id, depth + 1);
+      }
+      if (value.id != null && value.id !== value) {
+        return normalize(value.id, depth + 1);
+      }
+      if (value.$oid != null && value.$oid !== value) {
+        return normalize(value.$oid, depth + 1);
+      }
+    }
+
+    try {
+      const s = String(value);
+      return mongoose.Types.ObjectId.isValid(s) ? s : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return normalize(raw, 0);
 }
 
 /** Collect unique Shift _ids stored on timetable weekly_rotas snapshots */
