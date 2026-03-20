@@ -19,7 +19,7 @@ class AISolver {
       // Load context-specific constraints
       const context = { 
         home_id: homeId, 
-        service_id: serviceId,
+        service_id: serviceId || undefined,
         // Add additional context properties that appliesToContext might need
         user_homes: [{ home_id: homeId }],
         user_role: 'admin' // Default role for system-level constraints
@@ -34,6 +34,7 @@ class AISolver {
   }
 
   // Main method to generate rota assignments
+  // serviceId: omit or pass null/undefined to include all services (multi-service / cross-service staff)
   async generateRota(weekStartDate, weekEndDate, homeIds, serviceId, existingShifts = []) {
     try {
       // Convert string dates to Date objects if needed

@@ -117,7 +117,7 @@ router.post('/', [
   body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Name is required and must be less than 100 characters'),
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be less than 500 characters'),
   body('home_ids').isArray({ min: 1 }).withMessage('At least one home must be selected'),
-  body('service_id').isMongoId().withMessage('Valid service ID is required'),
+  body('service_id').optional({ checkFalsy: true }).isMongoId().withMessage('When provided, service ID must be valid'),
   body('start_date').isISO8601().withMessage('Valid start date is required'),
   body('end_date').isISO8601().withMessage('Valid end date is required'),
   body('total_weeks').isInt({ min: 1, max: 52 }).withMessage('Total weeks must be between 1 and 52')
@@ -131,7 +131,7 @@ router.post('/', [
       });
     }
     
-    const { name, description, home_ids, service_id, start_date, end_date, total_weeks } = req.body;
+    const { name, description, home_ids, service_id: serviceIdBody, start_date, end_date, total_weeks } = req.body;
     
     // Validate date range
     const start = new Date(start_date);
@@ -152,12 +152,11 @@ router.post('/', [
       });
     }
     
-    // Create timetable draft
-    const timetable = new Timetable({
+    // Create timetable draft (service_id omitted = generate across all services for selected homes)
+    const timetablePayload = {
       name,
       description,
       home_ids,
-      service_id,
       start_date: start,
       end_date: end,
       total_weeks: requestedWeeks,
@@ -168,7 +167,11 @@ router.post('/', [
       total_assignments: 0,
       average_weekly_hours: 0,
       weekly_rotas: []
-    });
+    };
+    if (serviceIdBody) {
+      timetablePayload.service_id = serviceIdBody;
+    }
+    const timetable = new Timetable(timetablePayload);
     
     await timetable.save();
     
@@ -452,13 +455,13 @@ async function generateTimetableAsync(timetableId, userId) {
         
         console.log(`Generating week ${week + 1}/${timetable.total_weeks}: ${weekStart.toISOString().split('T')[0]} to ${weekEnd.toISOString().split('T')[0]}`);
         
-        // Generate rota for this week using AI Solver
+        // Generate rota for this week using AI Solver (omit timetable.service_id for all services)
         const result = await withTimeout(
           aiSolver.generateRota(
             weekStart,
             weekEnd,
             timetable.home_ids,
-            timetable.service_id,
+            timetable.service_id ?? undefined,
             [] // Don't pass existing shifts for timetable generation
           ),
           perWeekGenerationTimeoutMs,

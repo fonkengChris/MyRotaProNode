@@ -15,10 +15,11 @@ const timetableSchema = new mongoose.Schema({
     ref: 'Home',
     required: true
   }],
+  // Optional: omit for org-wide timetables (all services in selected homes)
   service_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Service',
-    required: [true, 'Service ID is required']
+    required: false
   },
   start_date: {
     type: Date,
