@@ -41,7 +41,7 @@ const shiftSchema = new mongoose.Schema({
   },
   shift_type: {
     type: String,
-    enum: ['morning', 'day', 'afternoon', 'evening', 'night', 'overtime', 'long_day', 'split'],
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'overtime', 'long_day', 'split'],
     required: [true, 'Shift type is required']
   },
   required_staff_count: {
