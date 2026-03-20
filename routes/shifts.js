@@ -343,7 +343,8 @@ router.post('/:id/assign', async (req, res) => {
       user_id,
       shift.date,
       shift.start_time,
-      shift.end_time
+      shift.end_time,
+      { requesterRole: currentUser.role }
     );
 
     if (conflictCheck.hasConflict) {
@@ -358,6 +359,9 @@ router.post('/:id/assign', async (req, res) => {
           break;
         case 'max_hours_exceeded':
           userFriendlyMessage = `Cannot assign staff member - this would exceed maximum daily hours (${conflictCheck.message})`;
+          break;
+        case 'fulltime_weekly_cap_exceeded':
+          userFriendlyMessage = conflictCheck.message;
           break;
         default:
           userFriendlyMessage = conflictCheck.message;

@@ -1,7 +1,38 @@
 const TimeOffRequest = require('../models/TimeOffRequest');
 const Shift = require('../models/Shift');
+const User = require('../models/User');
+const ConstraintWeights = require('../models/ConstraintWeights');
 
 class SchedulingConflictService {
+  /** Match Shift model / schema virtual for duration (handles overnight). */
+  static _shiftDurationHours(startTime, endTime) {
+    const [sh, sm] = startTime.split(':').map(Number);
+    const [eh, em] = endTime.split(':').map(Number);
+    let startTotal = sh * 60 + sm;
+    let endTotal = eh * 60 + em;
+    if (endTotal < startTotal) endTotal += 24 * 60;
+    return (endTotal - startTotal) / 60;
+  }
+
+  /** Monday–Sunday week containing `dateStr` (YYYY-MM-DD), using local calendar dates. */
+  static _weekRangeMondayToSunday(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const day = date.getDay();
+    const offsetFromMonday = day === 0 ? 6 : day - 1;
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - offsetFromMonday);
+    const fmt = (dt) => {
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    };
+    const endDate = new Date(monday);
+    endDate.setDate(monday.getDate() + 6);
+    return { start: fmt(monday), end: fmt(endDate) };
+  }
+
   /**
    * Check if a user has time-off conflicts for a specific date range
    * @param {string} userId - The user ID to check
@@ -41,9 +72,12 @@ class SchedulingConflictService {
    * @param {string} shiftDate - Shift date in YYYY-MM-DD format
    * @param {string} shiftStartTime - Shift start time in HH:MM format
    * @param {string} shiftEndTime - Shift end time in HH:MM format
+   * @param {object} [options]
+   * @param {string} [options.requesterRole] - Role of user making the assignment (required to exceed full-time weekly cap)
    * @returns {Promise<Object>} Conflict information
    */
-  static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime) {
+  static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime, options = {}) {
+    const requesterRole = options.requesterRole;
     try {
       // Check for time-off conflicts on the same date
       const timeOffConflicts = await this.checkTimeOffConflicts(userId, shiftDate, shiftDate);
@@ -105,6 +139,38 @@ class SchedulingConflictService {
           conflicts: [],
           message: `Total daily hours (${totalHours.toFixed(1)}) would exceed 24 hours`
         };
+      }
+
+      // Full-time staff: weekly cap (default 48h); exceeding requires admin or home_manager
+      const staff = await User.findById(userId).select('type').lean();
+      if (staff && staff.type === 'fulltime') {
+        const policy = await ConstraintWeights.getFulltimeWeeklyHoursPolicy();
+        const week = this._weekRangeMondayToSunday(shiftDate);
+        const weekShifts = await Shift.find({
+          date: { $gte: week.start, $lte: week.end },
+          'assigned_staff.user_id': userId
+        }).select('start_time end_time date');
+
+        let weeklyHours = weekShifts.reduce(
+          (sum, s) => sum + this._shiftDurationHours(s.start_time, s.end_time),
+          0
+        );
+        weeklyHours += this._shiftDurationHours(shiftStartTime, shiftEndTime);
+
+        if (!ConstraintWeights.canAuthorizeFulltimeOverWeeklyCap(requesterRole, weeklyHours, policy)) {
+          return {
+            hasConflict: true,
+            conflictType: 'fulltime_weekly_cap_exceeded',
+            conflicts: [],
+            message: `Full-time weekly hours would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may assign above this limit`,
+            details: {
+              projected_weekly_hours: Math.round(weeklyHours * 10) / 10,
+              cap_hours: policy.capHours,
+              week_start: week.start,
+              week_end: week.end
+            }
+          };
+        }
       }
 
       return {

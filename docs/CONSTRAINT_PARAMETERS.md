@@ -32,17 +32,22 @@ This document outlines the updated constraint parameters for managing staff hour
 ### Parameters:
 ```json
 {
-  "fulltime": 80,    // Full-time staff cannot exceed 80 hours/week
+  "fulltime": 48,    // Full-time staff weekly cap (soft constraint / solver penalty)
   "parttime": 20,    // Part-time staff cannot exceed 20 hours/week
   "bank": 20,        // Bank staff cannot exceed 20 hours/week
   "overtime_threshold": 40,
-  "overtime_penalty_multiplier": 1.5
+  "overtime_penalty_multiplier": 1.5,
+  "approver_roles_for_hours_over_cap": ["admin", "home_manager"]
 }
 ```
 
+### Full-time weekly cap and shift assignment
+
+Assignments are evaluated on a **Monday–Sunday** week. If adding a shift would put a **full-time** staff member **above 48 hours** in that week, the assignment is **rejected** unless the acting user has role **`admin`** or **`home_manager`**. Other roles (including `senior_staff` and `support_worker`) cannot assign past this cap.
+
 ### Examples:
-- **Fulltime staff working 85 hours** → ❌ **VIOLATION** (5 hours above maximum)
-- **Fulltime staff working 80 hours** → ✅ **COMPLIANT**
+- **Fulltime staff working 50 hours** → ❌ **VIOLATION** (solver / `validateUserHours`)
+- **Fulltime staff working 48 hours** → ✅ **COMPLIANT**
 - **Part-time staff working 25 hours** → ❌ **VIOLATION** (5 hours above maximum)
 - **Bank staff working 25 hours** → ❌ **VIOLATION** (5 hours above maximum)
 
@@ -116,7 +121,7 @@ node scripts/testHoursConstraints.js
 | Employment Type | Hours | Expected Violation |
 |----------------|-------|-------------------|
 | Fulltime       | 35    | min_hours_per_week |
-| Fulltime       | 85    | max_hours_per_week |
+| Fulltime       | 50    | max_hours_per_week |
 | Fulltime       | 40    | None              |
 | Part-time      | 0     | None              |
 | Part-time      | 25    | max_hours_per_week |

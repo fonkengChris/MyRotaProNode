@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 
+/** Default weekly hours cap for full-time staff; assignments above this require admin/manager approval. */
+const FULLTIME_WEEKLY_HOURS_CAP_DEFAULT = 48;
+
+/** Roles that may assign shifts that exceed the full-time weekly cap (see parameters.approver_roles_for_hours_over_cap). */
+const FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT = ['admin', 'home_manager'];
+
 const constraintWeightsSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -148,8 +154,8 @@ constraintWeightsSchema.methods.calculateHoursPenalty = function(userType, actua
   }
   
   if (this.constraint_type === 'max_hours_per_week') {
-    // Get max hours based on employment type
-    const maxHours = this.parameters[userType] || 40;
+    // Get max hours based on employment type (fulltime default aligns with FULLTIME_WEEKLY_HOURS_CAP_DEFAULT)
+    const maxHours = this.parameters[userType] ?? (userType === 'fulltime' ? FULLTIME_WEEKLY_HOURS_CAP_DEFAULT : 40);
     const overtimeThreshold = this.parameters.overtime_threshold || 40;
     const overtimeMultiplier = this.parameters.overtime_penalty_multiplier || 1.5;
     
@@ -284,9 +290,14 @@ constraintWeightsSchema.statics.getViolationMessage = function(constraint, userT
       break;
     
     case 'max_hours_per_week':
-      const maxHours = constraint.parameters[userType] || 40; // Changed to use userType specific max hours
+      const maxHours = constraint.parameters[userType] ?? (userType === 'fulltime' ? FULLTIME_WEEKLY_HOURS_CAP_DEFAULT : 40);
       if (actualHours > maxHours) {
-        return `${userType} staff cannot exceed ${maxHours} hours per week (currently: ${actualHours})`;
+        let msg = `${userType} staff cannot exceed ${maxHours} hours per week (currently: ${actualHours})`;
+        if (userType === 'fulltime') {
+          const roles = constraint.parameters.approver_roles_for_hours_over_cap || FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT;
+          msg += `. Assignments above ${maxHours} hours require approval from ${roles.join(' or ')}`;
+        }
+        return msg;
       }
       break;
     
@@ -300,6 +311,32 @@ constraintWeightsSchema.statics.getViolationMessage = function(constraint, userT
       break;
   }
   return 'Constraint violation detected';
+};
+
+/**
+ * Policy for full-time weekly hours: cap and which roles may assign shifts that exceed it.
+ */
+constraintWeightsSchema.statics.getFulltimeWeeklyHoursPolicy = async function() {
+  const doc = await this.findOne({ is_active: true, constraint_type: 'max_hours_per_week' })
+    .select('parameters')
+    .lean();
+  const p = doc?.parameters || {};
+  return {
+    capHours: typeof p.fulltime === 'number' ? p.fulltime : FULLTIME_WEEKLY_HOURS_CAP_DEFAULT,
+    approverRoles:
+      Array.isArray(p.approver_roles_for_hours_over_cap) && p.approver_roles_for_hours_over_cap.length > 0
+        ? p.approver_roles_for_hours_over_cap
+        : FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT
+  };
+};
+
+/**
+ * Whether the actor may assign a full-time staff member when projected weekly hours exceed the cap.
+ */
+constraintWeightsSchema.statics.canAuthorizeFulltimeOverWeeklyCap = function(actorRole, projectedWeeklyHours, policy) {
+  if (projectedWeeklyHours <= policy.capHours) return true;
+  if (!actorRole) return false;
+  return policy.approverRoles.includes(actorRole);
 };
 
 // Static method to create default constraint weights
@@ -352,11 +389,12 @@ constraintWeightsSchema.statics.createDefaultWeights = function(creatorId) {
       weight: 100,
       constraint_type: 'max_hours_per_week',
       parameters: { 
-        fulltime: 80,
+        fulltime: FULLTIME_WEEKLY_HOURS_CAP_DEFAULT,
         parttime: 20,
         bank: 20,
         overtime_threshold: 40,
-        overtime_penalty_multiplier: 1.5
+        overtime_penalty_multiplier: 1.5,
+        approver_roles_for_hours_over_cap: FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT
       },
       created_by: creatorId
     },
@@ -431,4 +469,7 @@ constraintWeightsSchema.statics.createDefaultWeights = function(creatorId) {
 constraintWeightsSchema.set('toJSON', { virtuals: true });
 constraintWeightsSchema.set('toObject', { virtuals: true });
 
-module.exports = mongoose.model('ConstraintWeights', constraintWeightsSchema);
+const ConstraintWeights = mongoose.model('ConstraintWeights', constraintWeightsSchema);
+ConstraintWeights.FULLTIME_WEEKLY_HOURS_CAP_DEFAULT = FULLTIME_WEEKLY_HOURS_CAP_DEFAULT;
+ConstraintWeights.FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT = FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT;
+module.exports = ConstraintWeights;

@@ -50,7 +50,7 @@ async function setupAndTestConstraints() {
 
     const testCases = [
       { userType: 'fulltime', actualHours: 35, targetHours: 38, expectedViolations: ['min_hours_per_week'] },
-      { userType: 'fulltime', actualHours: 45, targetHours: 38, expectedViolations: ['max_hours_per_week'] },
+      { userType: 'fulltime', actualHours: 50, targetHours: 38, expectedViolations: ['max_hours_per_week'] },
       { userType: 'fulltime', actualHours: 40, targetHours: 38, expectedViolations: [] },
       { userType: 'parttime', actualHours: 15, targetHours: 20, expectedViolations: ['min_hours_per_week'] },
       { userType: 'parttime', actualHours: 25, targetHours: 20, expectedViolations: ['max_hours_per_week'] },
@@ -108,7 +108,7 @@ async function setupAndTestConstraints() {
       // Test with different scenarios
       const testScenarios = [
         { userType: 'fulltime', hours: 30, description: 'Fulltime working 30h (below min 38h)' },
-        { userType: 'fulltime', hours: 50, description: 'Fulltime working 50h (above max 45h)' },
+        { userType: 'fulltime', hours: 50, description: 'Fulltime working 50h (above max 48h)' },
         { userType: 'parttime', hours: 15, description: 'Part-time working 15h (below min 20h)' },
         { userType: 'parttime', hours: 25, description: 'Part-time working 25h (above max 20h)' },
         { userType: 'bank', hours: 10, description: 'Bank working 10h (above max 15h)' },

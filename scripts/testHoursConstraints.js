@@ -91,7 +91,7 @@ async function testHoursConstraints() {
       // Test with different scenarios
       const testScenarios = [
         { userType: 'fulltime', hours: 30, description: 'Fulltime working 30h (below min 38h)' },
-        { userType: 'fulltime', hours: 85, description: 'Fulltime working 85h (above max 80h)' },
+        { userType: 'fulltime', hours: 85, description: 'Fulltime working 85h (above max 48h)' },
         { userType: 'parttime', hours: 0, description: 'Part-time working 0h (within 0-20h range)' },
         { userType: 'parttime', hours: 25, description: 'Part-time working 25h (above max 20h)' },
         { userType: 'bank', hours: 0, description: 'Bank working 0h (within 0-20h range)' },
