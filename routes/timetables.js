@@ -1,7 +1,9 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const Timetable = require('../models/Timetable');
 const Shift = require('../models/Shift');
+const Rota = require('../models/Rota');
 const User = require('../models/User');
 const { requireRole } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
@@ -14,6 +16,76 @@ function withTimeout(promise, timeoutMs, timeoutMessage) {
       setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
     })
   ]);
+}
+
+function toYmd(value) {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return '';
+}
+
+/** Normalize snapshot shift_id (ObjectId, string, populated ref, { id }) */
+function normalizeShiftIdString(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    return mongoose.Types.ObjectId.isValid(raw) ? raw : null;
+  }
+  if (typeof raw === 'object') {
+    if (raw._id != null) return normalizeShiftIdString(raw._id);
+    if (raw.id != null) return normalizeShiftIdString(raw.id);
+    if (raw.$oid != null) return normalizeShiftIdString(raw.$oid);
+  }
+  try {
+    const s = String(raw);
+    return mongoose.Types.ObjectId.isValid(s) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Collect unique Shift _ids stored on timetable weekly_rotas snapshots */
+function collectShiftObjectIdsFromTimetable(timetable) {
+  const ids = new Set();
+  const weeks = timetable.weekly_rotas;
+  if (!weeks || !Array.isArray(weeks)) return [];
+  for (const week of weeks) {
+    if (!week.shifts || !Array.isArray(week.shifts)) continue;
+    for (const row of week.shifts) {
+      const idStr = normalizeShiftIdString(row.shift_id);
+      if (idStr) ids.add(idStr);
+    }
+  }
+  return Array.from(ids).map((id) => new mongoose.Types.ObjectId(id));
+}
+
+/**
+ * IDs of Shift documents to remove: weekly_rotas snapshot + any shift in
+ * [start_date, end_date] for timetable homes (covers gaps / legacy rows).
+ */
+async function getShiftObjectIdsToRemoveForTimetable(timetable) {
+  const ids = new Set();
+  for (const oid of collectShiftObjectIdsFromTimetable(timetable)) {
+    ids.add(String(oid));
+  }
+  const homeIds = timetable.home_ids;
+  const startStr = toYmd(timetable.start_date);
+  const endStr = toYmd(timetable.end_date);
+  if (homeIds && homeIds.length && startStr && endStr) {
+    const inRange = await Shift.find({
+      home_id: { $in: homeIds },
+      date: { $gte: startStr, $lte: endStr }
+    })
+      .select('_id')
+      .lean();
+    for (const doc of inRange) {
+      if (doc._id) ids.add(String(doc._id));
+    }
+  }
+  return Array.from(ids).map((id) => new mongoose.Types.ObjectId(id));
 }
 
 // Get all timetables accessible to the user
@@ -371,9 +443,25 @@ router.delete('/:id', [
     if (timetable.generated_by.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied to modify this timetable' });
     }
-    
+
+    // Remove live Shift documents and rota references (snapshot IDs + shifts in timetable date/home scope)
+    const shiftIds = await getShiftObjectIdsToRemoveForTimetable(timetable);
+    let shiftsDeleted = 0;
+    if (shiftIds.length > 0) {
+      const rotasAffectedIds = await Rota.distinct('_id', { shifts: { $in: shiftIds } });
+      await Rota.updateMany({ shifts: { $in: shiftIds } }, { $pullAll: { shifts: shiftIds } });
+      if (rotasAffectedIds.length) {
+        await Rota.deleteMany({ _id: { $in: rotasAffectedIds }, shifts: { $size: 0 } });
+      }
+      const del = await Shift.deleteMany({ _id: { $in: shiftIds } });
+      shiftsDeleted = del.deletedCount ?? 0;
+    }
+
     await Timetable.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Timetable deleted successfully' });
+    res.json({
+      message: 'Timetable deleted successfully',
+      shifts_deleted: shiftsDeleted
+    });
   } catch (error) {
     console.error('Error deleting timetable:', error);
     res.status(500).json({ error: 'Failed to delete timetable' });
