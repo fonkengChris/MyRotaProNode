@@ -39,9 +39,10 @@ const shiftSchema = new mongoose.Schema({
     required: [true, 'End time is required'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
   },
+  // night-wake = waking night; night-sleep = sleeping night (sleep-in). `night` kept for legacy data.
   shift_type: {
     type: String,
-    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'overtime', 'long_day', 'split'],
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
     required: [true, 'Shift type is required']
   },
   required_staff_count: {

@@ -72,7 +72,7 @@ const userSchema = new mongoose.Schema({
   }],
   preferred_shift_types: [{
     type: String,
-    enum: ['morning', 'afternoon', 'night', 'long_day']
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'long_day', 'split', 'overtime']
   }],
   max_hours_per_week: {
     type: Number,
