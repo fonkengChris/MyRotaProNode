@@ -82,57 +82,47 @@ class AISolver {
       let shifts = existingShifts;
       if (shifts.length === 0) {
         const Shift = require('../models/Shift');
+        // Include every target home in the fetch set (not only homes linked on staff profiles)
+        const mergedHomeIdSet = new Set(allStaffHomeIds);
+        homeIdArray.forEach((hid) => mergedHomeIdSet.add(hid.toString()));
 
-        const toObjectId = (id) => {
-          if (!id) return id;
-          if (id instanceof mongoose.Types.ObjectId) return id;
-          return new mongoose.Types.ObjectId(id);
-        };
-
-        // Target timetable homes ∪ staff homes — avoids missing rows created for a home not in staff.homes
-        const combinedHomeIdSet = new Set([
-          ...homeIdArray.map((id) => id.toString()),
-          ...Array.from(allStaffHomeIds)
-        ]);
-        const combinedHomeIdObjs = Array.from(combinedHomeIdSet).map((hid) => toObjectId(hid));
+        const allHomeIdObjs = Array.from(mergedHomeIdSet).map((homeId) =>
+          typeof homeId === 'string' ? new mongoose.Types.ObjectId(homeId) : homeId
+        );
 
         shifts = await Shift.find({
-          home_id: { $in: combinedHomeIdObjs },
+          home_id: { $in: allHomeIdObjs },
           date: {
             $gte: startDate.toISOString().split('T')[0],
             $lte: endDate.toISOString().split('T')[0]
           }
         }).populate('service_id', 'name');
 
-        console.log(`AI Solver: Found ${shifts.length} existing shifts across target + staff homes for the week`);
+        console.log(`AI Solver: Found ${shifts.length} existing shifts across merged homes for the week`);
 
         const targetHomeIds = new Set(homeIdArray.map((id) => id.toString()));
 
-        // Always ensure weekly-schedule slots exist as Shift documents before assignment (idempotent).
-        // Previously we only created when a home had zero shifts, so partial weeks / missing days were never created.
-        for (const homeId of homeIdArray) {
-          try {
-            await this.ensureShiftsFromWeeklyScheduleForHome(startDate, endDate, homeId, serviceId);
-          } catch (error) {
-            console.warn(`AI Solver: Failed to ensure weekly schedule shifts for home ${homeId}: ${error.message}`);
-          }
-        }
+        // 1) Materialize any missing weekly-schedule shifts (unassigned) for each target home — always,
+        //    not only when a home had zero shifts (fixes partial weeks / missing slots).
+        await this.ensureShiftsFromWeeklyScheduleForHomes(startDate, endDate, homeIdArray, serviceId);
 
-        // Reload so the solver and DB apply step see every shift, including those still unassigned
+        // 2) Reload shifts so the solver sees every persisted row before assignment.
         shifts = await Shift.find({
-          home_id: { $in: combinedHomeIdObjs },
+          home_id: { $in: allHomeIdObjs },
           date: {
             $gte: startDate.toISOString().split('T')[0],
             $lte: endDate.toISOString().split('T')[0]
           }
         }).populate('service_id', 'name');
 
-        console.log(`AI Solver: Total shifts for week after ensuring weekly schedule slots: ${shifts.length}`);
+        console.log(`AI Solver: ${shifts.length} shift(s) in scope after ensuring weekly schedules`);
 
         const targetHomeShifts = shifts.filter((shift) => targetHomeIds.has(shift.home_id.toString()));
 
         if (targetHomeShifts.length === 0) {
-          throw new Error('No shifts found or could be created for the specified target homes and week. Please create shifts or weekly schedules first before using AI generation.');
+          throw new Error(
+            'No shifts found or could be created for the specified target homes and week. Please create shifts or weekly schedules first before using AI generation.'
+          );
         }
       }
       
@@ -282,46 +272,54 @@ class AISolver {
   }
 
   /**
-   * Create missing Shift rows from the home's weekly schedule for the date range (idempotent).
-   * Call this before assignment so every scheduled slot exists in the DB even if it stays unassigned.
+   * Persist shift rows from weekly schedules for target homes before assignment runs.
+   * Inserts only missing shifts (same home, date, times, service) so partial weeks are filled in.
+   * All new shifts are created with assigned_staff: [] so they exist whether or not the solver assigns anyone.
    */
-  async ensureShiftsFromWeeklyScheduleForHome(startDate, endDate, homeId, serviceId) {
+  async ensureShiftsFromWeeklyScheduleForHomes(startDate, endDate, homeIds, serviceId) {
     const mongoose = require('mongoose');
     const Shift = require('../models/Shift');
+    let createdCount = 0;
 
-    const toObjectId = (id) => {
-      if (!id) return id;
-      if (id instanceof mongoose.Types.ObjectId) return id;
-      return new mongoose.Types.ObjectId(id);
-    };
+    for (const rawHomeId of homeIds) {
+      let generatedShifts;
+      try {
+        generatedShifts = await this.generateShiftsFromWeeklySchedule(startDate, endDate, rawHomeId, serviceId);
+      } catch (error) {
+        console.warn(
+          `AI Solver: Could not materialize weekly schedule for home ${rawHomeId}: ${error.message}`
+        );
+        continue;
+      }
 
-    const homeObj = toObjectId(homeId);
-    const generatedShifts = await this.generateShiftsFromWeeklySchedule(startDate, endDate, homeId, serviceId);
+      const homeObjectId =
+        typeof rawHomeId === 'string' ? new mongoose.Types.ObjectId(rawHomeId) : rawHomeId;
 
-    let created = 0;
-    for (const generatedShift of generatedShifts) {
-      const dateStr =
-        generatedShift.date instanceof Date
-          ? generatedShift.date.toISOString().split('T')[0]
-          : String(generatedShift.date).split('T')[0];
+      for (const generatedShift of generatedShifts) {
+        const dateStr =
+          generatedShift.date instanceof Date
+            ? generatedShift.date.toISOString().split('T')[0]
+            : String(generatedShift.date).slice(0, 10);
 
-      const svcId = toObjectId(generatedShift.service_id);
+        const serviceObjectId =
+          generatedShift.service_id && typeof generatedShift.service_id === 'string'
+            ? new mongoose.Types.ObjectId(generatedShift.service_id)
+            : generatedShift.service_id;
 
-      const exists = await Shift.findOne({
-        home_id: homeObj,
-        date: dateStr,
-        start_time: generatedShift.start_time,
-        end_time: generatedShift.end_time,
-        shift_type: generatedShift.shift_type,
-        service_id: svcId
-      })
-        .select('_id')
-        .lean();
+        const existing = await Shift.findOne({
+          home_id: homeObjectId,
+          date: dateStr,
+          start_time: generatedShift.start_time,
+          end_time: generatedShift.end_time,
+          service_id: serviceObjectId
+        });
+        if (existing) {
+          continue;
+        }
 
-      if (!exists) {
         const shiftData = {
-          home_id: homeObj,
-          service_id: svcId,
+          home_id: homeObjectId,
+          service_id: serviceObjectId,
           date: dateStr,
           start_time: generatedShift.start_time,
           end_time: generatedShift.end_time,
@@ -332,17 +330,17 @@ class AISolver {
           assigned_staff: [],
           is_urgent: false
         };
-        await new Shift(shiftData).save();
-        created++;
+
+        const newShift = new Shift(shiftData);
+        await newShift.save();
+        createdCount++;
       }
     }
 
-    if (created > 0) {
-      console.log(
-        `AI Solver: Created ${created} missing shift(s) from weekly schedule for home ${homeId} (expected ${generatedShifts.length} slots in range)`
-      );
+    if (createdCount > 0) {
+      console.log(`AI Solver: Created ${createdCount} missing shift document(s) from weekly schedules (unassigned)`);
     }
-    return { created, expected: generatedShifts.length };
+    return createdCount;
   }
 
   // Solve the assignment problem using constraint optimization
