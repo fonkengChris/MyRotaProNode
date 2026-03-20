@@ -47,6 +47,26 @@ function normalizeShiftIdString(raw) {
   }
 }
 
+function normalizeObjectIdString(raw) {
+  if (raw == null) return null;
+  if (typeof raw === 'string') {
+    return mongoose.Types.ObjectId.isValid(raw) ? raw : null;
+  }
+  // mongoose ObjectId
+  if (raw instanceof mongoose.Types.ObjectId) return raw.toString();
+  if (typeof raw === 'object') {
+    if (raw._id != null) return normalizeObjectIdString(raw._id);
+    if (raw.id != null) return normalizeObjectIdString(raw.id);
+    if (raw.$oid != null) return normalizeObjectIdString(raw.$oid);
+  }
+  try {
+    const s = String(raw);
+    return mongoose.Types.ObjectId.isValid(s) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Collect unique Shift _ids stored on timetable weekly_rotas snapshots */
 function collectShiftObjectIdsFromTimetable(timetable) {
   const ids = new Set();
@@ -71,7 +91,9 @@ async function getShiftObjectIdsToRemoveForTimetable(timetable) {
   for (const oid of collectShiftObjectIdsFromTimetable(timetable)) {
     ids.add(String(oid));
   }
-  const homeIds = timetable.home_ids;
+  const rawHomeIds = Array.isArray(timetable.home_ids) ? timetable.home_ids : [];
+  const homeIdStrings = rawHomeIds.map(normalizeObjectIdString).filter(Boolean);
+  const homeIds = homeIdStrings.map((id) => new mongoose.Types.ObjectId(id));
   const startStr = toYmd(timetable.start_date);
   const endStr = toYmd(timetable.end_date);
   if (homeIds && homeIds.length && startStr && endStr) {
@@ -464,7 +486,7 @@ router.delete('/:id', [
     });
   } catch (error) {
     console.error('Error deleting timetable:', error);
-    res.status(500).json({ error: 'Failed to delete timetable' });
+    res.status(500).json({ error: 'Failed to delete timetable', details: error?.message });
   }
 });
 
