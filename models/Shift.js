@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
 const shiftSchema = new mongoose.Schema({
   home_id: {
@@ -39,7 +40,7 @@ const shiftSchema = new mongoose.Schema({
     required: [true, 'End time is required'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
   },
-  // night-wake = waking night; night-sleep = sleeping night (sleep-in). `night` kept for legacy data.
+  // night-wake + legacy night: full span = paid hours. night-sleep: 8h sleep-in + remainder paid (see utils/shiftHours).
   shift_type: {
     type: String,
     enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
@@ -117,6 +118,15 @@ shiftSchema.virtual('duration_hours').get(function() {
   return (endTotal - startTotal) / 60;
 });
 
+shiftSchema.virtual('sleep_in_hours').get(function() {
+  return getShiftHourBreakdown(this).sleep_in_hours;
+});
+
+/** Paid working hours for caps/payroll: full duration except night-sleep (8h sleep-in removed). */
+shiftSchema.virtual('paid_work_hours').get(function() {
+  return getShiftHourBreakdown(this).paid_work_hours;
+});
+
 // Virtual for shift status
 shiftSchema.virtual('status').get(function() {
   if (!this.assigned_staff || this.assigned_staff.length === 0) return 'unassigned';
@@ -141,6 +151,8 @@ shiftSchema.virtual('publicInfo').get(function() {
     notes: this.notes,
     is_active: this.is_active,
     duration_hours: this.duration_hours,
+    sleep_in_hours: this.sleep_in_hours,
+    paid_work_hours: this.paid_work_hours,
     status: this.status
   };
 });

@@ -344,7 +344,7 @@ router.post('/:id/assign', async (req, res) => {
       shift.date,
       shift.start_time,
       shift.end_time,
-      { requesterRole: currentUser.role }
+      { requesterRole: currentUser.role, shiftType: shift.shift_type }
     );
 
     if (conflictCheck.hasConflict) {

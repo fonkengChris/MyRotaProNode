@@ -2,6 +2,7 @@ const TimeOffRequest = require('../models/TimeOffRequest');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
 const ConstraintWeights = require('../models/ConstraintWeights');
+const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
 class SchedulingConflictService {
   /** Match Shift model / schema virtual for duration (handles overnight). */
@@ -74,10 +75,12 @@ class SchedulingConflictService {
    * @param {string} shiftEndTime - Shift end time in HH:MM format
    * @param {object} [options]
    * @param {string} [options.requesterRole] - Role of user making the assignment (required to exceed full-time weekly cap)
+   * @param {string} [options.shiftType] - shift_type of the shift being assigned (for paid-hours / sleep-in rules)
    * @returns {Promise<Object>} Conflict information
    */
   static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime, options = {}) {
     const requesterRole = options.requesterRole;
+    const shiftType = options.shiftType;
     try {
       // Check for time-off conflicts on the same date
       const timeOffConflicts = await this.checkTimeOffConflicts(userId, shiftDate, shiftDate);
@@ -149,13 +152,17 @@ class SchedulingConflictService {
         const weekShifts = await Shift.find({
           date: { $gte: week.start, $lte: week.end },
           'assigned_staff.user_id': userId
-        }).select('start_time end_time date');
+        }).select('start_time end_time date shift_type');
 
         let weeklyHours = weekShifts.reduce(
-          (sum, s) => sum + this._shiftDurationHours(s.start_time, s.end_time),
+          (sum, s) => sum + getShiftHourBreakdown(s).paid_work_hours,
           0
         );
-        weeklyHours += this._shiftDurationHours(shiftStartTime, shiftEndTime);
+        weeklyHours += getShiftHourBreakdown({
+          start_time: shiftStartTime,
+          end_time: shiftEndTime,
+          shift_type: shiftType,
+        }).paid_work_hours;
 
         if (!ConstraintWeights.canAuthorizeFulltimeOverWeeklyCap(requesterRole, weeklyHours, policy)) {
           return {

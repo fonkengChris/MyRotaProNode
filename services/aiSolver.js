@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Shift = require('../models/Shift');
 const Availability = require('../models/Availability');
 const TimeOffRequest = require('../models/TimeOffRequest');
+const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
 class AISolver {
   constructor() {
@@ -706,9 +707,7 @@ class AISolver {
         shift.assigned_staff.forEach(assignment => {
           const staffId = assignment.user_id.toString();
           if (staffHours[staffId] !== undefined) {
-            // Calculate shift duration and add to staff hours
-            const duration = this.calculateShiftDuration(shift.start_time, shift.end_time);
-            staffHours[staffId] += duration;
+            staffHours[staffId] += getShiftHourBreakdown(shift).paid_work_hours;
           }
         });
       }
@@ -735,9 +734,7 @@ class AISolver {
         shift.assigned_staff.forEach(assignment => {
           const staffId = assignment.user_id.toString();
           if (staffHours[staffId] !== undefined) {
-            // Calculate shift duration and add to staff hours
-            const duration = this.calculateShiftDuration(shift.start_time, shift.end_time);
-            staffHours[staffId] += duration;
+            staffHours[staffId] += getShiftHourBreakdown(shift).paid_work_hours;
           }
         });
       }
@@ -749,8 +746,8 @@ class AISolver {
   // Apply employment type constraints to scoring
   applyEmploymentTypeConstraints(baseScore, staffMember, shift, currentHours) {
     let score = baseScore;
-    const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
-    const projectedHours = currentHours + shiftDuration;
+    const shiftPaid = getShiftHourBreakdown(shift).paid_work_hours;
+    const projectedHours = currentHours + shiftPaid;
     
     switch (staffMember.type) {
       case 'fulltime':
@@ -796,8 +793,8 @@ class AISolver {
   // Apply employment type constraints to scoring with multi-home awareness
   applyMultiHomeEmploymentTypeConstraints(baseScore, staffMember, shift, currentHours, homeIds) {
     let score = baseScore;
-    const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
-    const projectedHours = currentHours + shiftDuration;
+    const shiftPaid = getShiftHourBreakdown(shift).paid_work_hours;
+    const projectedHours = currentHours + shiftPaid;
     
     // Check if this is the staff member's default home
     const isDefaultHome = staffMember.homes.some(home => 
@@ -906,6 +903,7 @@ class AISolver {
       const shiftId = shift._id || shift.id || `${shift.date}-${shift.start_time}`;
       const shiftAssignments = [];
       const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
+      const shiftPaidHours = getShiftHourBreakdown(shift).paid_work_hours;
       
       // Determine which employment types to prioritize for this shift
       let prioritizedTypes = [];
@@ -937,7 +935,7 @@ class AISolver {
           score: constraints[s._id] ? (constraints[s._id][shiftId] || 0) : 0,
           currentShifts: staffShiftCounts[s._id.toString()] || 0,
           currentHours: staffCurrentHours[s._id.toString()] || 0,
-          projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftDuration,
+          projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftPaidHours,
           typePriority: prioritizedTypes.indexOf(s.type) >= 0 ? prioritizedTypes.indexOf(s.type) : 999 // Not prioritized = very low priority
         }))
         .filter(s => s.score > 0) // Only consider available staff
@@ -984,7 +982,7 @@ class AISolver {
         
         // Update shift count and hours for this staff member
         staffShiftCounts[staffMember.staffId.toString()]++;
-        staffCurrentHours[staffMember.staffId.toString()] += shiftDuration;
+        staffCurrentHours[staffMember.staffId.toString()] += shiftPaidHours;
         
         // Update type-specific counters
         if (staffMember.type === 'fulltime') {
@@ -1056,6 +1054,7 @@ class AISolver {
       const shiftId = shift._id || shift.id || `${shift.date}-${shift.start_time}`;
       const shiftAssignments = [];
       const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
+      const shiftPaidHours = getShiftHourBreakdown(shift).paid_work_hours;
       const shiftHomeId = shift.home_id.toString();
       
       // Determine which employment types to prioritize for this shift
@@ -1085,7 +1084,7 @@ class AISolver {
           score: constraints[s._id] ? (constraints[s._id][shiftId] || 0) : 0,
           currentShifts: staffShiftCounts[s._id.toString()] || 0,
           currentHours: staffCurrentHours[s._id.toString()] || 0,
-          projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftDuration,
+          projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftPaidHours,
           typePriority: prioritizedTypes.indexOf(s.type) >= 0 ? prioritizedTypes.indexOf(s.type) : 999, // Not prioritized = very low priority
           homeAssignments: staffHomeAssignments[s._id.toString()][shiftHomeId] || 0,
           isDefaultHome: s.homes.some(home => home.home_id.toString() === shiftHomeId && home.is_default)
@@ -1136,7 +1135,7 @@ class AISolver {
         
         // Update shift count and hours for this staff member
         staffShiftCounts[staffMember.staffId.toString()]++;
-        staffCurrentHours[staffMember.staffId.toString()] += shiftDuration;
+        staffCurrentHours[staffMember.staffId.toString()] += shiftPaidHours;
         staffHomeAssignments[staffMember.staffId.toString()][shiftHomeId]++;
         
         // Update type-specific counters
@@ -1381,12 +1380,12 @@ class AISolver {
     
     // Calculate hours for each staff member
     assignments.forEach(assignment => {
-      const shiftDuration = this.calculateShiftDuration(assignment.shift.start_time, assignment.shift.end_time);
+      const shiftPaid = getShiftHourBreakdown(assignment.shift).paid_work_hours;
       
       assignment.assignments.forEach(ass => {
         const staffId = ass.user_id.toString();
         if (staffHours[staffId] !== undefined) {
-          staffHours[staffId] += shiftDuration;
+          staffHours[staffId] += shiftPaid;
         }
       });
     });

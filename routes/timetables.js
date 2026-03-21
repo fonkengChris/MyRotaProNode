@@ -8,6 +8,7 @@ const User = require('../models/User');
 const { requireRole } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const SchedulingConflictService = require('../services/schedulingConflictService');
+const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
   return Promise.race([
@@ -651,6 +652,10 @@ async function generateTimetableAsync(timetableId, userId) {
         // Calculate week statistics
         const weekTotalShifts = weekShifts.length;
         const weekTotalHours = weekShifts.reduce((sum, shift) => sum + (shift.duration_hours || 0), 0);
+        const weekTotalPaidWorkHours = weekShifts.reduce(
+          (sum, shift) => sum + getShiftHourBreakdown(shift).paid_work_hours,
+          0
+        );
         const weekTotalAssignments = weekShifts.reduce((sum, shift) => sum + (shift.assigned_staff?.length || 0), 0);
         
         // Calculate employment distribution for this week
@@ -661,28 +666,34 @@ async function generateTimetableAsync(timetableId, userId) {
           week_start_date: weekStart,
           week_end_date: weekEnd,
           week_number: week + 1,
-          shifts: weekShifts.map(shift => ({
-            shift_id: shift._id,
-            home_id: shift.home_id,
-            service_id: shift.service_id,
-            date: shift.date,
-            start_time: shift.start_time,
-            end_time: shift.end_time,
-            shift_type: shift.shift_type,
-            required_staff_count: shift.required_staff_count,
-            assigned_staff: shift.assigned_staff.map(assignment => ({
-              user_id: assignment.user_id._id,
-              name: assignment.user_id.name,
-              role: assignment.user_id.role,
-              type: assignment.user_id.type,
-              status: assignment.status,
-              assigned_at: assignment.assigned_at
-            })),
-            notes: shift.notes,
-            duration_hours: shift.duration_hours || 0
-          })),
+          shifts: weekShifts.map(shift => {
+            const br = getShiftHourBreakdown(shift);
+            return {
+              shift_id: shift._id,
+              home_id: shift.home_id,
+              service_id: shift.service_id,
+              date: shift.date,
+              start_time: shift.start_time,
+              end_time: shift.end_time,
+              shift_type: shift.shift_type,
+              required_staff_count: shift.required_staff_count,
+              assigned_staff: shift.assigned_staff.map(assignment => ({
+                user_id: assignment.user_id._id,
+                name: assignment.user_id.name,
+                role: assignment.user_id.role,
+                type: assignment.user_id.type,
+                status: assignment.status,
+                assigned_at: assignment.assigned_at
+              })),
+              notes: shift.notes,
+              duration_hours: br.duration_hours,
+              paid_work_hours: br.paid_work_hours,
+              sleep_in_hours: br.sleep_in_hours
+            };
+          }),
           total_shifts: weekTotalShifts,
           total_hours: weekTotalHours,
+          total_paid_work_hours: weekTotalPaidWorkHours,
           total_assignments: weekTotalAssignments,
           employment_distribution: employmentDistribution
         };
@@ -768,7 +779,7 @@ function calculateEmploymentDistribution(shifts) {
       shift.assigned_staff.forEach(assignment => {
         const staffId = assignment.user_id._id.toString();
         const staffType = assignment.user_id.type;
-        const hours = shift.duration_hours || 0;
+        const hours = getShiftHourBreakdown(shift).paid_work_hours;
         
         if (!staffHours[staffId]) {
           staffHours[staffId] = { type: staffType, hours: 0 };

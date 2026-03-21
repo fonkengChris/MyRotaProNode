@@ -126,6 +126,14 @@ const timetableSchema = new mongoose.Schema({
       duration_hours: {
         type: Number,
         required: true
+      },
+      paid_work_hours: {
+        type: Number,
+        required: false
+      },
+      sleep_in_hours: {
+        type: Number,
+        required: false
       }
     }],
     total_shifts: {
@@ -135,6 +143,10 @@ const timetableSchema = new mongoose.Schema({
     total_hours: {
       type: Number,
       required: true
+    },
+    total_paid_work_hours: {
+      type: Number,
+      required: false
     },
     total_assignments: {
       type: Number,
