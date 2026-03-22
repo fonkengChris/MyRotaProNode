@@ -656,35 +656,49 @@ async function generateTimetableAsync(timetableId, userId) {
     const weeklyRotas = [];
     const generationErrors = [];
     
-    // Generate rota for each week
+    // One solver run for the full timetable range so weeks are solved in order with fairness
+    // (weekends / load) carried from earlier weeks instead of repeating the same pattern each week.
     const perWeekGenerationTimeoutMs = 2 * 60 * 1000; // 2 minutes per week
+    const fullGenerationTimeoutMs = perWeekGenerationTimeoutMs * Math.max(1, timetable.total_weeks);
+
+    try {
+      console.log(
+        `Running AI solver once for full period (${timetable.total_weeks} week(s)): ${toYmd(timetable.start_date)} – ${toYmd(timetable.end_date)}`
+      );
+      const result = await withTimeout(
+        aiSolver.generateRota(
+          new Date(timetable.start_date),
+          new Date(timetable.end_date),
+          timetable.home_ids,
+          timetable.service_id ?? undefined,
+          []
+        ),
+        fullGenerationTimeoutMs,
+        `Timetable generation timed out after ${fullGenerationTimeoutMs / 1000} seconds`
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'AI generation failed');
+      }
+    } catch (error) {
+      console.error('Timetable AI solver failed:', error);
+      generationErrors.push({
+        week: 0,
+        error: error.message,
+        timestamp: new Date()
+      });
+    }
+
     for (let week = 0; week < timetable.total_weeks; week++) {
       try {
         const weekStart = new Date(timetable.start_date);
         weekStart.setDate(weekStart.getDate() + (week * 7));
-        
+
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekEnd.getDate() + 6);
-        
-        console.log(`Generating week ${week + 1}/${timetable.total_weeks}: ${weekStart.toISOString().split('T')[0]} to ${weekEnd.toISOString().split('T')[0]}`);
-        
-        // Generate rota for this week using AI Solver (omit timetable.service_id for all services)
-        const result = await withTimeout(
-          aiSolver.generateRota(
-            weekStart,
-            weekEnd,
-            timetable.home_ids,
-            timetable.service_id ?? undefined,
-            [] // Don't pass existing shifts for timetable generation
-          ),
-          perWeekGenerationTimeoutMs,
-          `Week ${week + 1} generation timed out after ${perWeekGenerationTimeoutMs / 1000} seconds`
-        );
-        
-        if (!result.success) {
-          throw new Error(result.error || 'AI generation failed');
-        }
-        
+
+        console.log(`Building snapshot week ${week + 1}/${timetable.total_weeks}: ${weekStart.toISOString().split('T')[0]} to ${weekEnd.toISOString().split('T')[0]}`);
+
         // Get shifts for this week
         const weekShifts = await Shift.find({
           home_id: { $in: timetable.home_ids },

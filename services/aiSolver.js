@@ -5,10 +5,91 @@ const Availability = require('../models/Availability');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
+/** YYYY-MM-DD for a Date or date string (shift.date). */
+function shiftDateYmd(shift) {
+  if (!shift || shift.date == null) return '';
+  if (shift.date instanceof Date) return shift.date.toISOString().split('T')[0];
+  const s = String(shift.date);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+/** Local calendar weekend (Sat/Sun) for YYYY-MM-DD. */
+function isWeekendYmd(ymd) {
+  if (!ymd || ymd.length < 10) return false;
+  const [y, m, d] = ymd.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return false;
+  const day = new Date(y, m - 1, d).getDay();
+  return day === 0 || day === 6;
+}
+
 class AISolver {
   constructor() {
     this.constraints = null;
     this.weights = null;
+  }
+
+  /**
+   * Split [startDate, endDate] into contiguous 7-day blocks from start (matches timetable generation).
+   */
+  computeWeekSegments(startDate, endDate) {
+    const segments = [];
+    const cur = new Date(startDate);
+    cur.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(0, 0, 0, 0);
+    while (cur <= end) {
+      const ws = new Date(cur);
+      const we = new Date(cur);
+      we.setDate(we.getDate() + 6);
+      if (we > end) {
+        we.setTime(end.getTime());
+      }
+      segments.push({
+        weekStart: new Date(ws),
+        weekEnd: new Date(we),
+        startStr: ws.toISOString().split('T')[0],
+        endStr: we.toISOString().split('T')[0]
+      });
+      cur.setDate(cur.getDate() + 7);
+    }
+    return segments;
+  }
+
+  /**
+   * Update cumulative fairness stats from solved assignments (weekend + shift counts).
+   */
+  accumulateFairnessStats(assignments, priorFairness) {
+    const weekend = priorFairness.weekendShifts || (priorFairness.weekendShifts = {});
+    const counts = priorFairness.shiftCounts || (priorFairness.shiftCounts = {});
+    for (const row of assignments || []) {
+      const ymd = shiftDateYmd(row.shift);
+      const wknd = isWeekendYmd(ymd);
+      for (const ass of row.assignments || []) {
+        if (!ass || !ass.user_id) continue;
+        const id = ass.user_id.toString();
+        counts[id] = (counts[id] || 0) + 1;
+        if (wknd) {
+          weekend[id] = (weekend[id] || 0) + 1;
+        }
+      }
+    }
+  }
+
+  /** Keep master shift list in sync for cross-week overlap checks on later segments. */
+  applySolvedAssignmentsToShiftRefs(masterShifts, segmentAssignments) {
+    for (const row of segmentAssignments || []) {
+      if (!row.shift) continue;
+      const sid = (row.shift._id || row.shift.id || '').toString();
+      if (!sid) continue;
+      const target = masterShifts.find((s) => (s._id || s.id || '').toString() === sid);
+      if (!target) continue;
+      target.assigned_staff = (row.assignments || []).map((a) => ({
+        user_id: a.user_id,
+        status: a.status || 'assigned',
+        assigned_at: a.assigned_at || new Date(),
+        note: a.note || ''
+      }));
+    }
   }
 
   // Initialize solver with constraints and weights
@@ -127,19 +208,64 @@ class AISolver {
         }
       }
       
-      // Solve assignment problem considering multi-home constraints
-      const assignments = await this.solveMultiHomeAssignmentProblem(shifts, staff, availabilityData, timeOffData, homeIdArray);
-      
-      // Apply the assignments to the database incrementally to prevent double-booking
-      const hasValidShiftIds = assignments.some(assignment => {
+      // Solve week-by-week when the range spans multiple segments so fairness (e.g. weekends)
+      // carries forward; overlap/rest checks use the full in-memory rota built so far.
+      const segments = this.computeWeekSegments(startDate, endDate);
+      const priorFairness = { weekendShifts: {}, shiftCounts: {} };
+
+      for (let si = 0; si < segments.length; si++) {
+        const seg = segments[si];
+        const segmentShifts = shifts.filter((s) => {
+          const d = shiftDateYmd(s);
+          return d >= seg.startStr && d <= seg.endStr;
+        });
+        if (segmentShifts.length === 0) {
+          continue;
+        }
+
+        console.log(
+          `AI Solver: Solving segment ${si + 1}/${segments.length} (${seg.startStr} – ${seg.endStr}), ${segmentShifts.length} shift(s)`
+        );
+
+        const segmentAssignments = await this.solveMultiHomeAssignmentProblem(
+          segmentShifts,
+          staff,
+          availabilityData,
+          timeOffData,
+          homeIdArray,
+          {
+            overlapContextShifts: shifts,
+            segmentShiftsForHours: segmentShifts,
+            priorFairness
+          }
+        );
+
+        const hasValidShiftIds = segmentAssignments.some((assignment) => {
+          const shiftId = assignment.shift._id || assignment.shift.id;
+          return mongoose.Types.ObjectId.isValid(shiftId);
+        });
+
+        if (hasValidShiftIds) {
+          await this.applyAssignmentsToDatabaseIncrementally(segmentAssignments);
+        } else {
+          console.log('AI Solver: Skipping database application for segment - shifts appear to be test data');
+        }
+
+        this.accumulateFairnessStats(segmentAssignments, priorFairness);
+        this.applySolvedAssignmentsToShiftRefs(shifts, segmentAssignments);
+      }
+
+      const assignments = shifts.map((shift) => ({
+        shift,
+        assignments: shift.assigned_staff || []
+      }));
+
+      const hasValidShiftIds = assignments.some((assignment) => {
         const shiftId = assignment.shift._id || assignment.shift.id;
         return mongoose.Types.ObjectId.isValid(shiftId);
       });
-      
-      if (hasValidShiftIds) {
-        await this.applyAssignmentsToDatabaseIncrementally(assignments);
-      } else {
-        console.log('AI Solver: Skipping database application - shifts appear to be test data');
+      if (!hasValidShiftIds) {
+        console.log('AI Solver: No persisted shift IDs in result (test data or empty range)');
       }
       
       // Get employment type distribution summary
@@ -414,7 +540,7 @@ class AISolver {
   }
 
   // Solve the assignment problem using constraint optimization for multiple homes
-  async solveMultiHomeAssignmentProblem(shifts, staff, availabilityData, timeOffData, homeIds) {
+  async solveMultiHomeAssignmentProblem(shifts, staff, availabilityData, timeOffData, homeIds, options = {}) {
     try {
       // Filter shifts to only include those that need staff assignment
       const shiftsNeedingStaff = shifts.filter(shift => {
@@ -429,12 +555,29 @@ class AISolver {
           assignments: shift.assigned_staff || []
         }));
       }
+
+      const overlapContextShifts = options.overlapContextShifts || shifts;
+      const segmentShiftsForHours = options.segmentShiftsForHours || shifts;
+      const priorFairness = options.priorFairness || { weekendShifts: {}, shiftCounts: {} };
       
       // Build constraint matrix for unassigned shifts only, considering multi-home assignments
-      const constraints = this.buildMultiHomeConstraintMatrix(shiftsNeedingStaff, staff, availabilityData, timeOffData, homeIds);
+      const constraints = this.buildMultiHomeConstraintMatrix(
+        shiftsNeedingStaff,
+        staff,
+        availabilityData,
+        timeOffData,
+        homeIds,
+        { overlapContextShifts, segmentShiftsForHours, priorFairness }
+      );
       
       // Use greedy algorithm for initial assignment with multi-home awareness
-      const newAssignments = this.greedyMultiHomeAssignment(shiftsNeedingStaff, staff, constraints, homeIds);
+      const newAssignments = this.greedyMultiHomeAssignment(
+        shiftsNeedingStaff,
+        staff,
+        constraints,
+        homeIds,
+        { segmentShiftsForHours, priorFairness }
+      );
       
       // Apply local search optimization
       const optimizedNewAssignments = this.localSearchOptimization(newAssignments, constraints);
@@ -502,6 +645,8 @@ class AISolver {
         } else {
           shiftDate = 'unknown';
         }
+
+        const shiftKey = shift._id || shift.id || `${shiftDate}-${shift.start_time}`;
         
         // Check if staff member is already assigned to this shift
         const isAlreadyAssigned = shift.assigned_staff && shift.assigned_staff.some(assignment => 
@@ -574,7 +719,6 @@ class AISolver {
           );
         }
         
-        const shiftKey = shift._id || shift.id || `${shiftDate}-${shift.start_time}`;
         constraints[staffMember._id][shiftKey] = Math.max(score, 0);
       });
     });
@@ -583,11 +727,18 @@ class AISolver {
   }
 
   // Build constraint matrix for all staff-shift combinations considering multi-home assignments
-  buildMultiHomeConstraintMatrix(shifts, staff, availabilityData, timeOffData, homeIds) {
+  buildMultiHomeConstraintMatrix(shifts, staff, availabilityData, timeOffData, homeIds, matrixOptions = {}) {
     const constraints = {};
-    
-    // Calculate current hours for each staff member from existing assignments across all homes
-    const staffCurrentHours = this.calculateStaffCurrentHoursAcrossHomes(shifts, staff, homeIds);
+    const overlapShifts = matrixOptions.overlapContextShifts || shifts;
+    const hourScopeShifts = matrixOptions.segmentShiftsForHours || matrixOptions.overlapContextShifts || shifts;
+    const priorFairness = matrixOptions.priorFairness || { weekendShifts: {}, shiftCounts: {} };
+    const priorWeekend = priorFairness.weekendShifts || {};
+    const priorShiftCounts = priorFairness.shiftCounts || {};
+    const weekendPenaltyPerPrior = 14;
+    const evenDistributionPenaltyPerPriorShift = 2;
+
+    // Hours for employment-type scoring: current segment only (weekly caps stay per week).
+    const staffCurrentHours = this.calculateStaffCurrentHoursAcrossHomes(hourScopeShifts, staff, homeIds);
     
     staff.forEach(staffMember => {
       constraints[staffMember._id] = {};
@@ -602,6 +753,8 @@ class AISolver {
         } else {
           shiftDate = 'unknown';
         }
+
+        const shiftKey = shift._id || shift.id || `${shiftDate}-${shift.start_time}`;
         
         // Check if staff member has access to this shift's home
         const hasHomeAccess = staffMember.homes.some(home => 
@@ -610,7 +763,7 @@ class AISolver {
         
         if (!hasHomeAccess) {
           // Staff member doesn't have access to this home
-          constraints[staffMember._id][`${shift._id || shift.id || `${shiftDate}-${shift.start_time}`}`] = 0;
+          constraints[staffMember._id][shiftKey] = 0;
           return;
         }
         
@@ -621,21 +774,21 @@ class AISolver {
         
         if (isAlreadyAssigned) {
           // Staff member is already assigned to this shift
-          constraints[staffMember._id][`${shift._id || shift.id || `${shiftDate}-${shift.start_time}`}`] = 0;
+          constraints[staffMember._id][shiftKey] = 0;
           return;
         }
-        
+
         // Check for overlapping shifts (staff already assigned to shifts at the same time)
         const hasOverlappingShift = this.checkForOverlappingShifts(
           staffMember._id,
           shift,
-          shifts,
+          overlapShifts,
           staffCurrentHours
         );
         
         if (hasOverlappingShift) {
           // Staff member has overlapping shifts
-          constraints[staffMember._id][`${shift._id || shift.id || `${shiftDate}-${shift.start_time}`}`] = 0;
+          constraints[staffMember._id][shiftKey] = 0;
           return;
         }
         
@@ -684,9 +837,18 @@ class AISolver {
             staffCurrentHours[staffMember._id.toString()] || 0,
             homeIds
           );
+
+          const sid = staffMember._id.toString();
+          const priorW = priorWeekend[sid] || 0;
+          const priorC = priorShiftCounts[sid] || 0;
+          if (isWeekendYmd(shiftDate) && priorW > 0) {
+            score -= Math.min(55, priorW * weekendPenaltyPerPrior);
+          }
+          if (priorC > 0) {
+            score -= Math.min(35, priorC * evenDistributionPenaltyPerPriorShift);
+          }
         }
         
-        const shiftKey = shift._id || shift.id || `${shiftDate}-${shift.start_time}`;
         constraints[staffMember._id][shiftKey] = Math.max(score, 0);
       });
     });
@@ -719,6 +881,7 @@ class AISolver {
   // Calculate current hours for each staff member from existing assignments across multiple homes
   calculateStaffCurrentHoursAcrossHomes(shifts, staff, homeIds) {
     const staffHours = {};
+    const homeIdSet = new Set(homeIds.map((h) => (typeof h === 'string' ? h : h.toString())));
     
     staff.forEach(staffMember => {
       staffHours[staffMember._id.toString()] = 0;
@@ -726,7 +889,7 @@ class AISolver {
     
     shifts.forEach(shift => {
       // Only count hours for shifts in the specified homes
-      if (!homeIds.includes(shift.home_id.toString())) {
+      if (!homeIdSet.has(shift.home_id.toString())) {
         return;
       }
       
@@ -1006,20 +1169,39 @@ class AISolver {
   }
 
   // Greedy assignment algorithm with balanced distribution for multiple homes
-  greedyMultiHomeAssignment(shifts, staff, constraints, homeIds) {
+  greedyMultiHomeAssignment(shifts, staff, constraints, homeIds, options = {}) {
     const assignments = [];
-    const staffShiftCounts = {}; // Track how many shifts each staff member is assigned to
-    const staffCurrentHours = {}; // Track current hours for each staff member
+    const segmentShiftsForHours = options.segmentShiftsForHours || shifts;
+    const priorFairness = options.priorFairness || { weekendShifts: {}, shiftCounts: {} };
+    const priorWeekendInit = priorFairness.weekendShifts || {};
+    const priorShiftCountsInit = priorFairness.shiftCounts || {};
+
+    const staffShiftCounts = {}; // Rolling shift count (prior weeks + this segment)
+    const staffWeekendShifts = {}; // Weekend shifts in prior weeks + this segment
+    const staffCurrentHours = {}; // Current segment only (seeded from partial assignments)
     const staffHomeAssignments = {}; // Track assignments per home for each staff member
     
-    // Initialize tracking for all staff
     staff.forEach(s => {
-      staffShiftCounts[s._id.toString()] = 0;
-      staffCurrentHours[s._id.toString()] = 0;
-      staffHomeAssignments[s._id.toString()] = {};
+      const id = s._id.toString();
+      staffShiftCounts[id] = priorShiftCountsInit[id] || 0;
+      staffWeekendShifts[id] = priorWeekendInit[id] || 0;
+      staffCurrentHours[id] = 0;
+      staffHomeAssignments[id] = {};
       homeIds.forEach(homeId => {
-        staffHomeAssignments[s._id.toString()][homeId] = 0;
+        const hk = typeof homeId === 'string' ? homeId : homeId.toString();
+        staffHomeAssignments[id][hk] = 0;
       });
+    });
+
+    segmentShiftsForHours.forEach(shift => {
+      const paid = getShiftHourBreakdown(shift).paid_work_hours;
+      for (const a of shift.assigned_staff || []) {
+        if (!a || !a.user_id) continue;
+        const id = a.user_id.toString();
+        if (staffCurrentHours[id] !== undefined) {
+          staffCurrentHours[id] += paid;
+        }
+      }
     });
     
     // Categorize staff by employment type
@@ -1033,16 +1215,15 @@ class AISolver {
     const targetParttimeShifts = Math.min(totalShifts * 0.25, parttimeStaff.length * 8); // 25% of shifts, max 8 per part-time worker (16 hours)
     const targetBankShifts = totalShifts - targetFulltimeShifts - targetParttimeShifts; // Remaining shifts
     
-    // Sort shifts by priority (longer shifts first, then by time)
+    // Date order first so each week is filled in calendar sequence; then longer shifts earlier same day.
     const sortedShifts = [...shifts].sort((a, b) => {
+      const dateCmp = shiftDateYmd(a).localeCompare(shiftDateYmd(b));
+      if (dateCmp !== 0) return dateCmp;
       const durationA = this.calculateShiftDuration(a.start_time, a.end_time);
       const durationB = this.calculateShiftDuration(b.start_time, b.end_time);
-      
       if (durationA !== durationB) {
-        return durationB - durationA; // Longer shifts first
+        return durationB - durationA;
       }
-      
-      // If same duration, sort by start time
       return a.start_time.localeCompare(b.start_time);
     });
     
@@ -1056,6 +1237,8 @@ class AISolver {
       const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
       const shiftPaidHours = getShiftHourBreakdown(shift).paid_work_hours;
       const shiftHomeId = shift.home_id.toString();
+      const shiftYmd = shiftDateYmd(shift);
+      const shiftIsWeekend = isWeekendYmd(shiftYmd);
       
       // Determine which employment types to prioritize for this shift
       let prioritizedTypes = [];
@@ -1082,7 +1265,8 @@ class AISolver {
           name: s.name,
           type: s.type,
           score: constraints[s._id] ? (constraints[s._id][shiftId] || 0) : 0,
-          currentShifts: staffShiftCounts[s._id.toString()] || 0,
+          totalShiftsSoFar: staffShiftCounts[s._id.toString()] || 0,
+          weekendSoFar: staffWeekendShifts[s._id.toString()] || 0,
           currentHours: staffCurrentHours[s._id.toString()] || 0,
           projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftPaidHours,
           typePriority: prioritizedTypes.indexOf(s.type) >= 0 ? prioritizedTypes.indexOf(s.type) : 999, // Not prioritized = very low priority
@@ -1117,8 +1301,16 @@ class AISolver {
           if (weightedScoreA !== weightedScoreB) {
             return weightedScoreB - weightedScoreA;
           }
+
+          if (shiftIsWeekend && a.weekendSoFar !== b.weekendSoFar) {
+            return a.weekendSoFar - b.weekendSoFar;
+          }
+
+          if (a.totalShiftsSoFar !== b.totalShiftsSoFar) {
+            return a.totalShiftsSoFar - b.totalShiftsSoFar;
+          }
           
-          // Quaternary sort by current hours (prefer staff with fewer hours within their type)
+          // Prefer staff with fewer hours this segment
           return a.currentHours - b.currentHours;
         });
       
@@ -1134,9 +1326,13 @@ class AISolver {
         });
         
         // Update shift count and hours for this staff member
-        staffShiftCounts[staffMember.staffId.toString()]++;
-        staffCurrentHours[staffMember.staffId.toString()] += shiftPaidHours;
-        staffHomeAssignments[staffMember.staffId.toString()][shiftHomeId]++;
+        const sid = staffMember.staffId.toString();
+        staffShiftCounts[sid]++;
+        staffCurrentHours[sid] += shiftPaidHours;
+        staffHomeAssignments[sid][shiftHomeId]++;
+        if (shiftIsWeekend) {
+          staffWeekendShifts[sid]++;
+        }
         
         // Update type-specific counters
         if (staffMember.type === 'fulltime') {
@@ -1185,22 +1381,25 @@ class AISolver {
   trySwap(shift1, shift2, constraints) {
     let bestImprovement = 0;
     let bestSwap = null;
+
+    const sk = (s) => s._id || s.id || `${shiftDateYmd(s)}-${s.start_time}`;
+    const k1 = sk(shift1.shift);
+    const k2 = sk(shift2.shift);
     
     shift1.assignments.forEach(assignment1 => {
       shift2.assignments.forEach(assignment2 => {
-        // Calculate current score
-        const currentScore = (constraints[assignment1.user_id][shift1.shift.id] || 0) +
-                           (constraints[assignment2.user_id][shift2.shift.id] || 0);
+        const u1 = assignment1.user_id;
+        const u2 = assignment2.user_id;
+        const c1 = constraints[u1] && constraints[u1][k1];
+        const c2 = constraints[u2] && constraints[u2][k2];
+        const currentScore = (c1 || 0) + (c2 || 0);
         
-        // Calculate score after swap
-        const swappedScore = (constraints[assignment1.user_id][shift2.shift.id] || 0) +
-                           (constraints[assignment2.user_id][shift1.shift.id] || 0);
+        const swappedScore =
+          (constraints[u1] && constraints[u1][k2] || 0) + (constraints[u2] && constraints[u2][k1] || 0);
         
         const improvement = swappedScore - currentScore;
         
-        // Only allow swaps that improve employment type distribution
         if (improvement > bestImprovement) {
-          // Additional check: ensure the swap doesn't violate employment type constraints
           const isValidSwap = this.validateEmploymentTypeSwap(
             assignment1, assignment2, shift1, shift2
           );
@@ -1213,15 +1412,13 @@ class AISolver {
       });
     });
     
-    // Apply best swap if it improves the solution
     if (bestSwap && bestImprovement > 0) {
       const temp = bestSwap.assignment1.user_id;
       bestSwap.assignment1.user_id = bestSwap.assignment2.user_id;
       bestSwap.assignment2.user_id = temp;
       
-      // Update scores
-      bestSwap.assignment1.score = constraints[bestSwap.assignment1.user_id][shift1.shift.id] || 0;
-      bestSwap.assignment2.score = constraints[bestSwap.assignment2.user_id][shift2.shift.id] || 0;
+      bestSwap.assignment1.score = (constraints[bestSwap.assignment1.user_id] || {})[k1] || 0;
+      bestSwap.assignment2.score = (constraints[bestSwap.assignment2.user_id] || {})[k2] || 0;
     }
     
     return bestImprovement;
