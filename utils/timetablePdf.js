@@ -27,13 +27,14 @@ function ordinal(n) {
   return `${n}th`;
 }
 
-/** "yyyy-MM-dd" -> "16th Mar" */
-function dayHeaderLabel(ymd) {
-  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return ymd;
-  const d = parseInt(m[3], 10);
-  const mo = parseInt(m[2], 10) - 1;
-  return `${ordinal(d)} ${MONTHS_SHORT[mo] || ''}`;
+const WEEKDAY_SHORT_MON_SUN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** Monday 00:00 UTC of the ISO-style week (Mon–Sun) containing this calendar date. */
+function mondayOfWeekContainingUtc(y, monthIndex0, day) {
+  const dt = new Date(Date.UTC(y, monthIndex0, day));
+  const dow = dt.getUTCDay(); // 0 Sun .. 6 Sat
+  const offsetFromMonday = (dow + 6) % 7;
+  return new Date(Date.UTC(y, monthIndex0, day - offsetFromMonday));
 }
 
 /** Parse "HH:mm" or "H:mm" -> { h, min } 24h */
@@ -101,22 +102,31 @@ function formatStaffForCell(assignedStaff) {
     .join(' / ');
 }
 
-/** Seven calendar days starting week_start_date (local UTC date parts from ISO ymd). */
+/**
+ * Seven columns: Monday through Sunday of the week that contains week_start_date.
+ * Header example: "Mon 16th Mar".
+ */
 function weekDayDates(weekStartYmd) {
   const ymd = formatYmd(weekStartYmd);
   const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return [];
-  let y = parseInt(m[1], 10);
-  let mo = parseInt(m[2], 10) - 1;
-  let d = parseInt(m[3], 10);
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10) - 1;
+  const d = parseInt(m[3], 10);
+  const monday = mondayOfWeekContainingUtc(y, mo, d);
   const out = [];
   for (let i = 0; i < 7; i++) {
-    const dt = new Date(Date.UTC(y, mo, d + i));
+    const dt = new Date(
+      Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + i)
+    );
     const yy = dt.getUTCFullYear();
     const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(dt.getUTCDate()).padStart(2, '0');
     const str = `${yy}-${mm}-${dd}`;
-    out.push({ ymd: str, header: dayHeaderLabel(str) });
+    const dayNum = dt.getUTCDate();
+    const moIdx = dt.getUTCMonth();
+    const header = `${WEEKDAY_SHORT_MON_SUN[i]} ${ordinal(dayNum)} ${MONTHS_SHORT[moIdx] || ''}`;
+    out.push({ ymd: str, header });
   }
   return out;
 }
