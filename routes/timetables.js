@@ -9,6 +9,7 @@ const { requireRole } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const SchedulingConflictService = require('../services/schedulingConflictService');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
+const { createTimetableHomePdf, homeIdStr, safeFilePart } = require('../utils/timetablePdf');
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
   return Promise.race([
@@ -501,7 +502,14 @@ router.delete('/:id', [
     if (timetable.status === 'generating') {
       return res.status(400).json({ error: 'Cannot delete a timetable while generation is in progress' });
     }
-    
+
+    if (timetable.status === 'published') {
+      return res.status(400).json({
+        error:
+          'Published timetables are locked. Archive this timetable first if you need to remove it.'
+      });
+    }
+
     // Check if user can modify this timetable
     if (timetable.generated_by.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied to modify this timetable' });
@@ -570,6 +578,60 @@ router.get('/:id/weekly-breakdown', async (req, res) => {
   } catch (error) {
     console.error('Error fetching weekly breakdown:', error);
     res.status(500).json({ error: 'Failed to fetch weekly breakdown' });
+  }
+});
+
+// PDF export for one home (snapshot data)
+router.get('/:id/homes/:homeId/pdf', async (req, res) => {
+  try {
+    const { homeId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(homeId)) {
+      return res.status(400).json({ error: 'Invalid home ID' });
+    }
+
+    const timetable = await Timetable.findById(req.params.id).populate('home_ids', 'name location');
+
+    if (!timetable) {
+      return res.status(404).json({ error: 'Timetable not found' });
+    }
+
+    if (!timetable.canUserAccess(req.user)) {
+      return res.status(403).json({ error: 'Access denied to this timetable' });
+    }
+
+    const allowedPdfStatuses = ['generated', 'published', 'archived'];
+    if (!allowedPdfStatuses.includes(timetable.status)) {
+      return res.status(400).json({
+        error: 'PDF export is only available after the timetable has been generated'
+      });
+    }
+
+    const timetableHomeIds = (timetable.home_ids || []).map((h) => homeIdStr(h));
+    if (!timetableHomeIds.includes(homeId)) {
+      return res.status(400).json({ error: 'That home is not included in this timetable' });
+    }
+
+    let homeName = 'Home';
+    for (const h of timetable.home_ids || []) {
+      if (homeIdStr(h) === homeId && typeof h === 'object' && h.name) {
+        homeName = h.name;
+        break;
+      }
+    }
+
+    const doc = createTimetableHomePdf(timetable, homeId, { homeName });
+    const filename = `${safeFilePart(timetable.name)}_${safeFilePart(homeName)}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    doc.pipe(res);
+    doc.end();
+  } catch (error) {
+    console.error('Error generating timetable PDF:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to generate PDF' });
+    }
   }
 });
 

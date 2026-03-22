@@ -209,6 +209,9 @@ const timetableSchema = new mongoose.Schema({
       default: Date.now
     }
   }],
+  published_at: {
+    type: Date
+  },
   // Access control
   is_public: {
     type: Boolean,
@@ -272,6 +275,7 @@ timetableSchema.virtual('publicInfo').get(function() {
     total_assignments: this.total_assignments,
     average_weekly_hours: this.average_weekly_hours,
     is_public: this.is_public,
+    published_at: this.published_at,
     created_at: this.created_at,
     updated_at: this.updated_at
   };
@@ -279,15 +283,16 @@ timetableSchema.virtual('publicInfo').get(function() {
 
 // Method to publish timetable
 timetableSchema.methods.publish = function() {
-  if (!['draft', 'generated'].includes(this.status)) {
-    throw new Error('Only draft or generated timetables can be published');
+  if (this.status !== 'generated') {
+    throw new Error('Only generated timetables can be published');
   }
-  
+
   if (this.conflicts_detected > 0) {
     throw new Error('Cannot publish timetable with conflicts detected');
   }
-  
+
   this.status = 'published';
+  this.published_at = new Date();
   return this;
 };
 
