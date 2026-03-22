@@ -16,66 +16,309 @@ function formatYmd(value) {
   return s;
 }
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function ordinal(n) {
+  const j = n % 10;
+  const k = n % 100;
+  if (j === 1 && k !== 11) return `${n}st`;
+  if (j === 2 && k !== 12) return `${n}nd`;
+  if (j === 3 && k !== 13) return `${n}rd`;
+  return `${n}th`;
+}
+
+/** "yyyy-MM-dd" -> "16th Mar" */
+function dayHeaderLabel(ymd) {
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return ymd;
+  const d = parseInt(m[3], 10);
+  const mo = parseInt(m[2], 10) - 1;
+  return `${ordinal(d)} ${MONTHS_SHORT[mo] || ''}`;
+}
+
+/** Parse "HH:mm" or "H:mm" -> { h, min } 24h */
+function parseTimeParts(timeStr) {
+  const s = String(timeStr || '').trim();
+  const m = s.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return { h: 0, min: 0 };
+  return { h: parseInt(m[1], 10), min: parseInt(m[2], 10) };
+}
+
+/** 24h parts -> "8AM", "8:30PM" */
+function format12hLabel(parts) {
+  let { h, min } = parts;
+  if (h === 24 && min === 0) {
+    h = 0;
+  }
+  const period = h >= 12 ? 'PM' : 'AM';
+  let h12 = h % 12;
+  if (h12 === 0) h12 = 12;
+  if (min === 0) return `${h12}${period}`;
+  return `${h12}:${String(min).padStart(2, '0')}${period}`;
+}
+
+function shiftRowLabel(startTime, endTime) {
+  const a = parseTimeParts(startTime);
+  const b = parseTimeParts(endTime);
+  return `${format12hLabel(a)}-${format12hLabel(b)}`;
+}
+
+function slotKey(startTime, endTime) {
+  const a = parseTimeParts(startTime);
+  const b = parseTimeParts(endTime);
+  return `${String(a.h).padStart(2, '0')}:${String(a.min).padStart(2, '0')}|${String(b.h).padStart(2, '0')}:${String(b.min).padStart(2, '0')}`;
+}
+
+function slotSortOrder(key) {
+  const [left] = key.split('|');
+  const [h, min] = left.split(':').map((x) => parseInt(x, 10));
+  return (h || 0) * 60 + (min || 0);
+}
+
+/** Short label for roster cells (saves space). */
+function abbreviateStaffName(name) {
+  if (name == null || name === '') return '';
+  const s = String(name).trim();
+  if (!s) return '?';
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return parts
+      .map((p) => (p[0] ? p[0].toUpperCase() : ''))
+      .join('')
+      .slice(0, 4);
+  }
+  return s
+    .replace(/[^a-zA-Z]/g, '')
+    .slice(0, 4)
+    .toUpperCase();
+}
+
+function abbreviateAssignments(assignedStaff) {
+  if (!assignedStaff || !assignedStaff.length) return '';
+  return assignedStaff
+    .map((a) => abbreviateStaffName(a.name))
+    .filter(Boolean)
+    .join('/');
+}
+
+/** Seven calendar days starting week_start_date (local UTC date parts from ISO ymd). */
+function weekDayDates(weekStartYmd) {
+  const ymd = formatYmd(weekStartYmd);
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return [];
+  let y = parseInt(m[1], 10);
+  let mo = parseInt(m[2], 10) - 1;
+  let d = parseInt(m[3], 10);
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const dt = new Date(Date.UTC(y, mo, d + i));
+    const yy = dt.getUTCFullYear();
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    const str = `${yy}-${mm}-${dd}`;
+    out.push({ ymd: str, header: dayHeaderLabel(str) });
+  }
+  return out;
+}
+
+function buildWeekGridForHome(week, homeIdString) {
+  const shifts = (week.shifts || []).filter((s) => homeIdStr(s.home_id) === homeIdString);
+  const slotKeys = new Set();
+  for (const s of shifts) {
+    slotKeys.add(slotKey(s.start_time, s.end_time));
+  }
+  const rows = Array.from(slotKeys).sort((a, b) => slotSortOrder(a) - slotSortOrder(b));
+  const rowLabels = {};
+  for (const s of shifts) {
+    const k = slotKey(s.start_time, s.end_time);
+    rowLabels[k] = shiftRowLabel(s.start_time, s.end_time);
+  }
+
+  const days = weekDayDates(week.week_start_date);
+  const cellMap = new Map();
+  for (const s of shifts) {
+    const k = slotKey(s.start_time, s.end_time);
+    const date = formatYmd(s.date);
+    const abbrev = abbreviateAssignments(s.assigned_staff);
+    const ck = `${k}@@${date}`;
+    if (abbrev) {
+      const prev = cellMap.get(ck);
+      cellMap.set(ck, prev ? `${prev}, ${abbrev}` : abbrev);
+    }
+  }
+
+  return { rows, rowLabels, days, cellMap };
+}
+
+function drawTableGrid(doc, opts) {
+  const {
+    x,
+    y,
+    colWidths,
+    rowHeights,
+    headerBg = '#e8e0d0',
+    bodyBg = '#f7f4ec',
+    border = '#000000'
+  } = opts;
+
+  doc.lineWidth(0.5);
+  doc.strokeColor(border);
+  let rowY = y;
+  for (let r = 0; r < rowHeights.length; r++) {
+    let cx = x;
+    const rh = rowHeights[r];
+    for (let c = 0; c < colWidths.length; c++) {
+      const cw = colWidths[c];
+      const fill = r === 0 || c === 0 ? headerBg : bodyBg;
+      doc.fillColor(fill).rect(cx, rowY, cw, rh).fill();
+      doc.rect(cx, rowY, cw, rh).stroke();
+      cx += cw;
+    }
+    rowY += rh;
+  }
+}
+
+function drawCellText(doc, text, x, y, w, h, { bold = false, size = 8 } = {}) {
+  doc.fillColor('#000000');
+  if (bold) {
+    doc.font('Helvetica-Bold');
+  } else {
+    doc.font('Helvetica');
+  }
+  doc.fontSize(size);
+  const t = String(text || '');
+  const pad = 3;
+  const maxTextH = Math.max(h - pad * 2, size);
+  const textH = doc.heightOfString(t, { width: w, lineGap: 0 });
+  if (textH > maxTextH) {
+    doc.text(t, x, y + pad, {
+      width: w,
+      align: 'center',
+      height: maxTextH,
+      lineGap: 0,
+      ellipsis: true
+    });
+  } else {
+    const ty = y + pad + (maxTextH - textH) / 2;
+    doc.text(t, x, ty, { width: w, align: 'center', lineGap: 0 });
+  }
+  doc.font('Helvetica');
+}
+
 /**
  * Build a PDF document for one home’s shifts across all snapshot weeks.
- * Caller pipes the document to the HTTP response and calls doc.end().
+ * Landscape grid: rows = shift times, columns = days (see sample layout).
  */
 function createTimetableHomePdf(timetable, homeMongoId, options = {}) {
   const homeName = options.homeName || 'Home';
   const homeIdString = homeIdStr(homeMongoId);
-  const doc = new PDFDocument({ margin: 48, size: 'A4' });
+  const doc = new PDFDocument({
+    margin: 36,
+    size: 'A4',
+    layout: 'landscape'
+  });
 
-  doc.fontSize(18).text(String(timetable.name || 'Timetable'), { underline: true });
-  doc.moveDown(0.5);
-  doc.fontSize(11).fillColor('#333333');
-  doc.text(`Home: ${homeName}`);
-  doc.text(`Period: ${formatYmd(timetable.start_date)} – ${formatYmd(timetable.end_date)}`);
-  if (timetable.published_at) {
-    doc.text(`Published: ${formatYmd(timetable.published_at)}`);
-  }
-  doc.text(`Status: ${timetable.status || ''}`);
+  const pageW = doc.page.width;
+  const pageH = doc.page.height;
+  const margin = 36;
+  let cursorY = margin;
+
   doc.fillColor('#000000');
-  doc.moveDown();
+  doc.font('Helvetica-Bold').fontSize(16).text(String(timetable.name || 'Timetable'), margin, cursorY, {
+    width: pageW - 2 * margin
+  });
+  cursorY = doc.y + 8;
+
+  doc.font('Helvetica').fontSize(9).fillColor('#333333');
+  doc.text(`Home: ${homeName}`, margin, cursorY);
+  cursorY = doc.y + 2;
+  doc.text(`Period: ${formatYmd(timetable.start_date)} – ${formatYmd(timetable.end_date)}`, margin, cursorY);
+  cursorY = doc.y + 2;
+  if (timetable.published_at) {
+    doc.text(`Published: ${formatYmd(timetable.published_at)}`, margin, cursorY);
+    cursorY = doc.y + 2;
+  }
+  doc.text(`Staff shown as abbreviations in the grid.`, margin, cursorY);
+  cursorY = doc.y + 14;
+  doc.fillColor('#000000');
 
   const weeks = Array.isArray(timetable.weekly_rotas) ? timetable.weekly_rotas : [];
   let hadAnyShifts = false;
+
+  const innerW = pageW - 2 * margin;
+  const timeColW = 78;
+  const dayColW = (innerW - timeColW) / 7;
 
   for (const week of weeks) {
     const shifts = (week.shifts || []).filter((s) => homeIdStr(s.home_id) === homeIdString);
     if (shifts.length === 0) continue;
 
     hadAnyShifts = true;
+    const { rows, rowLabels, days, cellMap } = buildWeekGridForHome(week, homeIdString);
 
-    if (doc.y > 680) {
+    const headerH = 22;
+    const spaceForTable = () => pageH - margin - cursorY;
+    let dataRowH =
+      rows.length === 0
+        ? 20
+        : Math.min(30, Math.max(12, Math.floor((spaceForTable() - headerH - 8) / Math.max(rows.length, 1))));
+    let tableH = headerH + rows.length * dataRowH;
+
+    if (cursorY + tableH > pageH - margin) {
       doc.addPage();
+      cursorY = margin;
+      dataRowH =
+        rows.length === 0
+          ? 20
+          : Math.min(30, Math.max(12, Math.floor((pageH - 2 * margin - headerH - 8) / Math.max(rows.length, 1))));
+      tableH = headerH + rows.length * dataRowH;
     }
 
-    doc
-      .fontSize(12)
-      .text(
-        `Week ${week.week_number}: ${formatYmd(week.week_start_date)} – ${formatYmd(week.week_end_date)}`,
-        { underline: true }
-      );
-    doc.moveDown(0.25);
-    doc.fontSize(9);
+    const tableTop = cursorY;
+    const colWidths = [timeColW, ...Array(7).fill(dayColW)];
+    const rowHeights = [headerH, ...rows.map(() => dataRowH)];
 
-    const sorted = [...shifts].sort((a, b) => {
-      const ka = `${a.date || ''} ${(a.start_time || '').slice(0, 5)}`;
-      const kb = `${b.date || ''} ${(b.start_time || '').slice(0, 5)}`;
-      return ka.localeCompare(kb);
+    drawTableGrid(doc, {
+      x: margin,
+      y: tableTop,
+      colWidths,
+      rowHeights,
+      headerBg: '#e8e0d0',
+      bodyBg: '#f7f4ec',
+      border: '#000000'
     });
 
-    for (const shift of sorted) {
-      const staff = (shift.assigned_staff || []).map((s) => s.name).join(', ') || '—';
-      const type = shift.shift_type || '';
-      const line = `${shift.date}  ${String(shift.start_time || '').slice(0, 5)}–${String(shift.end_time || '').slice(0, 5)}  ${type}  Staff: ${staff}`;
-      doc.text(line, { width: 500 });
+    let rx = margin;
+    let ry = tableTop;
+
+    // Header row text
+    drawCellText(doc, `WEEK ${week.week_number}`, rx, ry, timeColW, headerH, { bold: true, size: 8 });
+    rx += timeColW;
+    for (const day of days) {
+      drawCellText(doc, day.header, rx, ry, dayColW, headerH, { bold: true, size: 8 });
+      rx += dayColW;
     }
-    doc.moveDown(0.75);
+
+    // Data rows
+    for (let ri = 0; ri < rows.length; ri++) {
+      const slot = rows[ri];
+      ry = tableTop + headerH + ri * dataRowH;
+      rx = margin;
+      drawCellText(doc, rowLabels[slot] || slot, rx, ry, timeColW, dataRowH, { bold: true, size: 7 });
+      rx += timeColW;
+      for (const day of days) {
+        const ck = `${slot}@@${day.ymd}`;
+        const content = cellMap.get(ck) || '';
+        drawCellText(doc, content, rx, ry, dayColW, dataRowH, { bold: false, size: 7 });
+        rx += dayColW;
+      }
+    }
+
+    cursorY = tableTop + tableH + 16;
   }
 
   if (!hadAnyShifts) {
-    doc.fontSize(11).text('No shifts recorded for this home in this timetable.');
+    doc.font('Helvetica').fontSize(11).text('No shifts recorded for this home in this timetable.', margin, cursorY);
   }
 
   return doc;
