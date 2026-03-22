@@ -75,30 +75,30 @@ function slotSortOrder(key) {
   return (h || 0) * 60 + (min || 0);
 }
 
-/** Short label for roster cells (saves space). */
-function abbreviateStaffName(name) {
-  if (name == null || name === '') return '';
-  const s = String(name).trim();
-  if (!s) return '?';
+/**
+ * Given names in full, surname as initial + period.
+ * "Anna Collins" -> "Anna C."; "Anna Marie Smith" -> "Anna Marie S."
+ * Single token -> shown unchanged (e.g. "Ludwig").
+ */
+function formatStaffNameForCell(rawName) {
+  if (rawName == null) return '';
+  const s = String(rawName).trim();
+  if (!s) return 'Unknown';
   const parts = s.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return parts
-      .map((p) => (p[0] ? p[0].toUpperCase() : ''))
-      .join('')
-      .slice(0, 4);
-  }
-  return s
-    .replace(/[^a-zA-Z]/g, '')
-    .slice(0, 4)
-    .toUpperCase();
+  if (parts.length === 1) return parts[0];
+  const firstNames = parts.slice(0, -1).join(' ');
+  const surname = parts[parts.length - 1];
+  const letter = surname.replace(/^[^A-Za-z]+/, '').charAt(0);
+  const surAbbrev = letter ? `${letter.toUpperCase()}.` : '';
+  return surAbbrev ? `${firstNames} ${surAbbrev}` : firstNames;
 }
 
-function abbreviateAssignments(assignedStaff) {
+function formatStaffForCell(assignedStaff) {
   if (!assignedStaff || !assignedStaff.length) return '';
   return assignedStaff
-    .map((a) => abbreviateStaffName(a.name))
+    .map((a) => formatStaffNameForCell(a.name))
     .filter(Boolean)
-    .join('/');
+    .join(' / ');
 }
 
 /** Seven calendar days starting week_start_date (local UTC date parts from ISO ymd). */
@@ -139,11 +139,11 @@ function buildWeekGridForHome(week, homeIdString) {
   for (const s of shifts) {
     const k = slotKey(s.start_time, s.end_time);
     const date = formatYmd(s.date);
-    const abbrev = abbreviateAssignments(s.assigned_staff);
+    const cellText = formatStaffForCell(s.assigned_staff);
     const ck = `${k}@@${date}`;
-    if (abbrev) {
+    if (cellText) {
       const prev = cellMap.get(ck);
-      cellMap.set(ck, prev ? `${prev}, ${abbrev}` : abbrev);
+      cellMap.set(ck, prev ? `${prev}, ${cellText}` : cellText);
     }
   }
 
@@ -238,7 +238,7 @@ function createTimetableHomePdf(timetable, homeMongoId, options = {}) {
     doc.text(`Published: ${formatYmd(timetable.published_at)}`, margin, cursorY);
     cursorY = doc.y + 2;
   }
-  doc.text(`Staff shown as abbreviations in the grid.`, margin, cursorY);
+  doc.text(`Names: given names in full, surname as initial (e.g. Anna C.).`, margin, cursorY);
   cursorY = doc.y + 14;
   doc.fillColor('#000000');
 
