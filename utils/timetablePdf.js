@@ -27,15 +27,8 @@ function ordinal(n) {
   return `${n}th`;
 }
 
-const WEEKDAY_SHORT_MON_SUN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-/** Monday 00:00 UTC of the ISO-style week (Mon–Sun) containing this calendar date. */
-function mondayOfWeekContainingUtc(y, monthIndex0, day) {
-  const dt = new Date(Date.UTC(y, monthIndex0, day));
-  const dow = dt.getUTCDay(); // 0 Sun .. 6 Sat
-  const offsetFromMonday = (dow + 6) % 7;
-  return new Date(Date.UTC(y, monthIndex0, day - offsetFromMonday));
-}
+/** getUTCDay() index: 0 Sun .. 6 Sat */
+const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Parse "HH:mm" or "H:mm" -> { h, min } 24h */
 function parseTimeParts(timeStr) {
@@ -103,29 +96,29 @@ function formatStaffForCell(assignedStaff) {
 }
 
 /**
- * Seven columns: Monday through Sunday of the week that contains week_start_date.
- * Header example: "Mon 16th Mar".
+ * Seven columns matching the timetable snapshot week (same range as generation:
+ * week_start_date .. week_start_date + 6 days), not a separate Mon–Sun calendar week.
+ * Headers use the real weekday for each column, e.g. "Wed 12th Mar".
  */
-function weekDayDates(weekStartYmd) {
-  const ymd = formatYmd(weekStartYmd);
+function weekDayDatesForSnapshotWeek(week) {
+  const ymd = formatYmd(week.week_start_date);
   const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!m) return [];
   const y = parseInt(m[1], 10);
   const mo = parseInt(m[2], 10) - 1;
   const d = parseInt(m[3], 10);
-  const monday = mondayOfWeekContainingUtc(y, mo, d);
   const out = [];
   for (let i = 0; i < 7; i++) {
-    const dt = new Date(
-      Date.UTC(monday.getUTCFullYear(), monday.getUTCMonth(), monday.getUTCDate() + i)
-    );
+    const dt = new Date(Date.UTC(y, mo, d + i));
     const yy = dt.getUTCFullYear();
     const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
     const dd = String(dt.getUTCDate()).padStart(2, '0');
     const str = `${yy}-${mm}-${dd}`;
     const dayNum = dt.getUTCDate();
     const moIdx = dt.getUTCMonth();
-    const header = `${WEEKDAY_SHORT_MON_SUN[i]} ${ordinal(dayNum)} ${MONTHS_SHORT[moIdx] || ''}`;
+    const dow = dt.getUTCDay();
+    const wlabel = WEEKDAY_SHORT[dow] || '';
+    const header = `${wlabel} ${ordinal(dayNum)} ${MONTHS_SHORT[moIdx] || ''}`;
     out.push({ ymd: str, header });
   }
   return out;
@@ -144,7 +137,7 @@ function buildWeekGridForHome(week, homeIdString) {
     rowLabels[k] = shiftRowLabel(s.start_time, s.end_time);
   }
 
-  const days = weekDayDates(week.week_start_date);
+  const days = weekDayDatesForSnapshotWeek(week);
   const cellMap = new Map();
   for (const s of shifts) {
     const k = slotKey(s.start_time, s.end_time);
