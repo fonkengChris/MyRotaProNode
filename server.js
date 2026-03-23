@@ -29,6 +29,7 @@ const aiSolverRoutes = require('./routes/aiSolver');
 const shiftSwapRoutes = require('./routes/shiftSwaps');
 const timetableRoutes = require('./routes/timetables');
 const messageRoutes = require('./routes/messages');
+const payrollRoutes = require('./routes/payroll');
 
 // Import middleware
 const { authenticateToken } = require('./middleware/auth');
@@ -134,6 +135,7 @@ app.use('/api/ai-solver', authenticateToken, aiSolverRoutes);
 app.use('/api/shift-swaps', authenticateToken, shiftSwapRoutes);
 app.use('/api/timetables', authenticateToken, timetableRoutes);
 app.use('/api/messages', authenticateToken, messageRoutes);
+app.use('/api/payroll', authenticateToken, payrollRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
