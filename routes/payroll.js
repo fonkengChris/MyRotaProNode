@@ -11,6 +11,13 @@ function isValidYmd(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function normalizeOptionalHomeId(value) {
+  if (value == null) return undefined;
+  const str = String(value).trim();
+  if (!str || str === 'null' || str === 'undefined') return undefined;
+  return str;
+}
+
 function requireDateRange(req, res) {
   const { start_date: startDate, end_date: endDate } = req.query;
   if (!isValidYmd(startDate) || !isValidYmd(endDate)) {
@@ -168,7 +175,7 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const defaultHourlyRate = Number(req.query.default_hourly_rate || 0) || 0;
     const { startDate, endDate } = dateRange;
-    const { home_id: homeId } = req.query;
+    const homeId = normalizeOptionalHomeId(req.query.home_id);
 
     const data = await buildPayrollRecords({
       startDate,
@@ -199,7 +206,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const defaultHourlyRate = Number(req.query.default_hourly_rate || 0) || 0;
     const { startDate, endDate } = dateRange;
-    const { home_id: homeId } = req.query;
+    const homeId = normalizeOptionalHomeId(req.query.home_id);
 
     const data = await buildPayrollRecords({
       startDate,
