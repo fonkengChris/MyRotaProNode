@@ -7,6 +7,9 @@ const { requireRole } = require('../middleware/auth');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
+const DEFAULT_HOURLY_RATE_GBP = 12.71;
+const SLEEP_NIGHT_FLAT_PAY_GBP = 50;
+
 function isValidYmd(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
@@ -47,7 +50,20 @@ function computeBreakDeduction(paidWorkHours) {
   return 0;
 }
 
-async function buildPayrollRecords({ startDate, endDate, requestedHomeId, currentUser, defaultHourlyRate }) {
+function normalizeNonNegativeNumber(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return parsed;
+}
+
+async function buildPayrollRecords({
+  startDate,
+  endDate,
+  requestedHomeId,
+  currentUser,
+  hourlyRate,
+  sleepNightFlatPay,
+}) {
   const isAdmin = currentUser.role === 'admin';
   const userHomeIds = getUserHomeIds(currentUser);
 
@@ -111,7 +127,9 @@ async function buildPayrollRecords({ startDate, endDate, requestedHomeId, curren
           sleep_in_hours: 0,
           paid_hours: 0,
           break_deductions: 0,
-          hourly_rate: defaultHourlyRate,
+          sleep_night_shifts: 0,
+          sleep_night_pay: 0,
+          hourly_rate: hourlyRate,
           gross_pay: 0,
         });
       }
@@ -120,18 +138,23 @@ async function buildPayrollRecords({ startDate, endDate, requestedHomeId, curren
       row.sleep_in_hours += br.sleep_in_hours;
       row.break_deductions += breakDeduction;
       row.paid_hours += paidAfterBreak;
+      if (shift.shift_type === 'night-sleep') {
+        row.sleep_night_shifts += 1;
+        row.sleep_night_pay += sleepNightFlatPay;
+      }
     }
   }
 
   const records = Array.from(byUser.values())
     .map((row) => {
-      row.gross_pay = row.paid_hours * row.hourly_rate;
+      row.gross_pay = row.paid_hours * row.hourly_rate + row.sleep_night_pay;
       return {
         ...row,
         rostered_hours: Number(row.rostered_hours.toFixed(2)),
         sleep_in_hours: Number(row.sleep_in_hours.toFixed(2)),
         paid_hours: Number(row.paid_hours.toFixed(2)),
         break_deductions: Number(row.break_deductions.toFixed(2)),
+        sleep_night_pay: Number(row.sleep_night_pay.toFixed(2)),
         gross_pay: Number(row.gross_pay.toFixed(2)),
       };
     })
@@ -143,6 +166,7 @@ async function buildPayrollRecords({ startDate, endDate, requestedHomeId, curren
       acc.total_sleep_in_hours += row.sleep_in_hours || 0;
       acc.total_paid_hours += row.paid_hours || 0;
       acc.total_break_deductions += row.break_deductions || 0;
+      acc.total_sleep_night_pay += row.sleep_night_pay || 0;
       acc.total_gross_pay += row.gross_pay || 0;
       return acc;
     },
@@ -151,6 +175,7 @@ async function buildPayrollRecords({ startDate, endDate, requestedHomeId, curren
       total_sleep_in_hours: 0,
       total_paid_hours: 0,
       total_break_deductions: 0,
+      total_sleep_night_pay: 0,
       total_gross_pay: 0,
     }
   );
@@ -162,6 +187,7 @@ async function buildPayrollRecords({ startDate, endDate, requestedHomeId, curren
       total_sleep_in_hours: Number(totals.total_sleep_in_hours.toFixed(2)),
       total_paid_hours: Number(totals.total_paid_hours.toFixed(2)),
       total_break_deductions: Number(totals.total_break_deductions.toFixed(2)),
+      total_sleep_night_pay: Number(totals.total_sleep_night_pay.toFixed(2)),
       total_gross_pay: Number(totals.total_gross_pay.toFixed(2)),
     },
   };
@@ -173,16 +199,21 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
     const dateRange = requireDateRange(req, res);
     if (!dateRange) return;
 
-    const defaultHourlyRate = Number(req.query.default_hourly_rate || 0) || 0;
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
+    const hourlyRate = normalizeNonNegativeNumber(req.query.hourly_rate, DEFAULT_HOURLY_RATE_GBP);
+    const sleepNightFlatPay = normalizeNonNegativeNumber(
+      req.query.sleep_night_pay,
+      SLEEP_NIGHT_FLAT_PAY_GBP
+    );
 
     const data = await buildPayrollRecords({
       startDate,
       endDate,
       requestedHomeId: homeId,
       currentUser: req.user,
-      defaultHourlyRate,
+      hourlyRate,
+      sleepNightFlatPay,
     });
 
     res.json({
@@ -204,16 +235,21 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
     const dateRange = requireDateRange(req, res);
     if (!dateRange) return;
 
-    const defaultHourlyRate = Number(req.query.default_hourly_rate || 0) || 0;
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
+    const hourlyRate = normalizeNonNegativeNumber(req.query.hourly_rate, DEFAULT_HOURLY_RATE_GBP);
+    const sleepNightFlatPay = normalizeNonNegativeNumber(
+      req.query.sleep_night_pay,
+      SLEEP_NIGHT_FLAT_PAY_GBP
+    );
 
     const data = await buildPayrollRecords({
       startDate,
       endDate,
       requestedHomeId: homeId,
       currentUser: req.user,
-      defaultHourlyRate,
+      hourlyRate,
+      sleepNightFlatPay,
     });
 
     let homeNamePart = 'all_homes';
