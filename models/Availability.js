@@ -27,7 +27,7 @@ const availabilitySchema = new mongoose.Schema({
   },
   preferred_shift_type: {
     type: String,
-    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'none'],
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'special', 'none'],
     default: null
   },
   notes: {

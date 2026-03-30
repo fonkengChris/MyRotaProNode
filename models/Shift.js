@@ -43,7 +43,7 @@ const shiftSchema = new mongoose.Schema({
   // night-wake + legacy night: full span = paid hours. night-sleep: 8h sleep-in + remainder paid (see utils/shiftHours).
   shift_type: {
     type: String,
-    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
     required: [true, 'Shift type is required']
   },
   required_staff_count: {

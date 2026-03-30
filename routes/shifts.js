@@ -3,6 +3,15 @@ const router = express.Router();
 const Shift = require('../models/Shift');
 const { requireRole } = require('../middleware/auth');
 
+function isSpecialShiftType(shiftType) {
+  return String(shiftType || '').toLowerCase() === 'special';
+}
+
+function shouldAllowOverlapBetweenShiftTypes(newShiftType, existingShiftType) {
+  // Special shifts are additive one-to-one style coverage and may overlap regular shifts.
+  return isSpecialShiftType(newShiftType) || isSpecialShiftType(existingShiftType);
+}
+
 // Get all shifts
 router.get('/', async (req, res) => {
   try {
@@ -121,7 +130,7 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
     }
     
     // Check for shift overlaps (handles multi-day shifts)
-    const { home_id, date, start_time, end_time } = req.body;
+    const { home_id, date, start_time, end_time, shift_type } = req.body;
     
     // Check for overlaps on the same date
     const sameDateShifts = await Shift.find({ 
@@ -149,6 +158,10 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
     const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
     
     const hasOverlap = allRelevantShifts.some(existingShift => {
+      if (shouldAllowOverlapBetweenShiftTypes(shift_type, existingShift.shift_type)) {
+        return false;
+      }
+
       const existingStart = new Date(`2000-01-01T${existingShift.start_time}`);
       let existingEnd = new Date(`2000-01-01T${existingShift.end_time}`);
       const newStart = new Date(`2000-01-01T${start_time}`);
@@ -210,7 +223,7 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
 router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
   try {
     // Check for shift overlaps (excluding current shift, handles multi-day shifts)
-    const { home_id, date, start_time, end_time } = req.body;
+    const { home_id, date, start_time, end_time, shift_type } = req.body;
     
     // Check for overlaps on the same date
     const sameDateShifts = await Shift.find({ 
@@ -238,6 +251,10 @@ router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async
     const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
     
     const hasOverlap = allRelevantShifts.some(existingShift => {
+      if (shouldAllowOverlapBetweenShiftTypes(shift_type, existingShift.shift_type)) {
+        return false;
+      }
+
       const existingStart = new Date(`2000-01-01T${existingShift.start_time}`);
       let existingEnd = new Date(`2000-01-01T${existingShift.end_time}`);
       const newStart = new Date(`2000-01-01T${start_time}`);

@@ -1,7 +1,7 @@
 /**
  * Hour breakdown for payroll / caps:
  * - `night-sleep` only: first 8h = sleep-in (not paid work); remainder = regular paid hours.
- * - `night-wake`, legacy `night`, and all other types: full shift span = regular paid hours
+ * - `night-wake`, `special`, legacy `night`, and all other types: full shift span = regular paid hours
  *   (then break deductions apply to that paid portion in the app layer).
  */
 
@@ -28,7 +28,7 @@ function getShiftHourBreakdown(shift) {
       ? shift.duration_hours
       : durationFromTimes(shift.start_time, shift.end_time);
 
-  // Only sleeping-night uses sleep-in; waking night + legacy `night` are fully paid like daytime shifts.
+  // Only sleeping-night uses sleep-in; all other types (including `special`) are paid like regular shifts.
   if (shiftType === 'night-sleep') {
     const sleep_in_hours = Math.min(NIGHT_SLEEP_IN_HOURS, duration);
     const paid_work_hours = Math.max(0, duration - NIGHT_SLEEP_IN_HOURS);

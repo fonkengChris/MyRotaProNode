@@ -22,6 +22,10 @@ function isWeekendYmd(ymd) {
   return day === 0 || day === 6;
 }
 
+function isSpecialShift(shift) {
+  return String(shift?.shift_type || '').toLowerCase() === 'special';
+}
+
 class AISolver {
   constructor() {
     this.constraints = null;
@@ -1045,8 +1049,14 @@ class AISolver {
     
     // console.log(`AI Solver: Target distribution - Full-time: ${targetFulltimeShifts}, Part-time: ${targetParttimeShifts}, Bank: ${targetBankShifts}`);
     
-    // Sort shifts by priority (longer shifts first, then by time)
+    // Date order first; on the same day prioritize special one-to-one coverage.
     const sortedShifts = [...shifts].sort((a, b) => {
+      const dateCmp = shiftDateYmd(a).localeCompare(shiftDateYmd(b));
+      if (dateCmp !== 0) return dateCmp;
+
+      const specialCmp = Number(isSpecialShift(b)) - Number(isSpecialShift(a));
+      if (specialCmp !== 0) return specialCmp;
+
       const durationA = this.calculateShiftDuration(a.start_time, a.end_time);
       const durationB = this.calculateShiftDuration(b.start_time, b.end_time);
       
@@ -1215,10 +1225,14 @@ class AISolver {
     const targetParttimeShifts = Math.min(totalShifts * 0.25, parttimeStaff.length * 8); // 25% of shifts, max 8 per part-time worker (16 hours)
     const targetBankShifts = totalShifts - targetFulltimeShifts - targetParttimeShifts; // Remaining shifts
     
-    // Date order first so each week is filled in calendar sequence; then longer shifts earlier same day.
+    // Date order first; within a day prioritize special shifts, then longer shifts.
     const sortedShifts = [...shifts].sort((a, b) => {
       const dateCmp = shiftDateYmd(a).localeCompare(shiftDateYmd(b));
       if (dateCmp !== 0) return dateCmp;
+
+      const specialCmp = Number(isSpecialShift(b)) - Number(isSpecialShift(a));
+      if (specialCmp !== 0) return specialCmp;
+
       const durationA = this.calculateShiftDuration(a.start_time, a.end_time);
       const durationB = this.calculateShiftDuration(b.start_time, b.end_time);
       if (durationA !== durationB) {
