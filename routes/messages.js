@@ -5,27 +5,10 @@ const User = require('../models/User');
 
 const router = express.Router();
 
-function homeIdSet(user) {
-  const set = new Set();
-  if (!user.homes || !user.homes.length) return set;
-  for (const h of user.homes) {
-    if (h.home_id) set.add(h.home_id.toString());
-  }
-  return set;
-}
-
-function sharesAnyHome(a, b) {
-  const aIds = homeIdSet(a);
-  if (!aIds.size) return false;
-  if (!b.homes || !b.homes.length) return false;
-  return b.homes.some((h) => h.home_id && aIds.has(h.home_id.toString()));
-}
-
 function canExchangeMessages(viewer, target) {
   if (!target || !target.is_active) return false;
   if (viewer._id.equals(target._id)) return false;
-  if (viewer.role === 'admin') return true;
-  return sharesAnyHome(viewer, target);
+  return true;
 }
 
 function serializeMessage(doc) {
@@ -120,7 +103,7 @@ router.get('/thread/:userId', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user id' });
     }
 
-    const partner = await User.findById(userId).select('name email role is_active homes');
+    const partner = await User.findById(userId).select('name email role is_active');
     if (!partner) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -183,7 +166,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid recipient' });
     }
 
-    const recipient = await User.findById(to_user_id).select('name email role is_active homes');
+    const recipient = await User.findById(to_user_id).select('name email role is_active');
     if (!recipient) {
       return res.status(404).json({ error: 'Recipient not found' });
     }
