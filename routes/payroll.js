@@ -3,12 +3,17 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Shift = require('../models/Shift');
 const Home = require('../models/Home');
+const User = require('../models/User');
+const TimeOffRequest = require('../models/TimeOffRequest');
 const { requireRole } = require('../middleware/auth');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
 const DEFAULT_HOURLY_RATE_GBP = 12.71;
 const SLEEP_NIGHT_FLAT_PAY_GBP = 50;
+const LEAVE_PAID_HOURS_PER_DAY = 7.5;
+
+const NIGHT_SHIFT_TYPES = new Set(['night-wake', 'night-sleep', 'night']);
 
 function isValidYmd(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -56,6 +61,51 @@ function normalizeNonNegativeNumber(value, fallback) {
   return parsed;
 }
 
+function isNightShift(shiftType) {
+  return NIGHT_SHIFT_TYPES.has(shiftType);
+}
+
+/** Inclusive calendar days between two YYYY-MM-DD strings. */
+function countInclusiveDays(startYmd, endYmd) {
+  if (!isValidYmd(startYmd) || !isValidYmd(endYmd) || startYmd > endYmd) return 0;
+  const start = new Date(`${startYmd}T00:00:00Z`);
+  const end = new Date(`${endYmd}T00:00:00Z`);
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor((end - start) / msPerDay) + 1;
+}
+
+function countOverlapDays(rangeStart, rangeEnd, periodStart, periodEnd) {
+  const start = rangeStart > periodStart ? rangeStart : periodStart;
+  const end = rangeEnd < periodEnd ? rangeEnd : periodEnd;
+  return countInclusiveDays(start, end);
+}
+
+function createEmptyPayrollRow({ uid, name, role, hourlyRate }) {
+  return {
+    id: uid,
+    user_id: uid,
+    name: name || 'Unknown',
+    role: role || 'support_worker',
+    day_hours: 0,
+    night_hours: 0,
+    paid_hours: 0,
+    break_deductions: 0,
+    sleep_night_shifts: 0,
+    sleep_in_pay: 0,
+    leave_days: 0,
+    leave_pay: 0,
+    hourly_rate: hourlyRate,
+    gross_pay: 0,
+  };
+}
+
+async function getScopedUserIds(homeFilter) {
+  if (!homeFilter) return null;
+  const homeIds = Array.isArray(homeFilter) ? homeFilter : [homeFilter];
+  const users = await User.find({ 'homes.home_id': { $in: homeIds } }).select('_id');
+  return new Set(users.map((u) => String(u._id)));
+}
+
 async function buildPayrollRecords({
   startDate,
   endDate,
@@ -86,16 +136,19 @@ async function buildPayrollRecords({
       return {
         records: [],
         totals: {
-          total_rostered_hours: 0,
-          total_sleep_in_hours: 0,
+          total_day_hours: 0,
+          total_night_hours: 0,
           total_paid_hours: 0,
-          total_break_deductions: 0,
+          total_sleep_in_pay: 0,
+          total_leave_pay: 0,
           total_gross_pay: 0,
         },
       };
     }
     homeFilter = userHomeIds;
   }
+
+  const scopedUserIds = await getScopedUserIds(homeFilter);
 
   const shiftFilter = {
     date: { $gte: startDate, $lte: endDate },
@@ -113,48 +166,88 @@ async function buildPayrollRecords({
     const breakDeduction = computeBreakDeduction(br.paid_work_hours);
     const paidAfterBreak = Math.max(0, br.paid_work_hours - breakDeduction);
     const assignments = Array.isArray(shift.assigned_staff) ? shift.assigned_staff : [];
+    const nightShift = isNightShift(shift.shift_type);
+
     for (const assignment of assignments) {
       const staff = assignment.user_id;
       if (!staff || !staff._id) continue;
       const uid = String(staff._id);
+      if (scopedUserIds && !scopedUserIds.has(uid)) continue;
+
       if (!byUser.has(uid)) {
-        byUser.set(uid, {
-          id: uid,
-          user_id: uid,
-          name: staff.name || 'Unknown',
-          role: staff.role || 'support_worker',
-          rostered_hours: 0,
-          sleep_in_hours: 0,
-          paid_hours: 0,
-          break_deductions: 0,
-          sleep_night_shifts: 0,
-          sleep_night_pay: 0,
-          hourly_rate: hourlyRate,
-          gross_pay: 0,
-        });
+        byUser.set(
+          uid,
+          createEmptyPayrollRow({
+            uid,
+            name: staff.name,
+            role: staff.role,
+            hourlyRate,
+          })
+        );
       }
       const row = byUser.get(uid);
-      row.rostered_hours += br.duration_hours;
-      row.sleep_in_hours += br.sleep_in_hours;
       row.break_deductions += breakDeduction;
-      row.paid_hours += paidAfterBreak;
+
+      if (nightShift) {
+        row.night_hours += paidAfterBreak;
+      } else {
+        row.day_hours += paidAfterBreak;
+      }
+
       if (shift.shift_type === 'night-sleep') {
         row.sleep_night_shifts += 1;
-        row.sleep_night_pay += sleepNightFlatPay;
+        row.sleep_in_pay += sleepNightFlatPay;
       }
     }
   }
 
+  const timeOffRequests = await TimeOffRequest.find({
+    status: 'approved',
+    start_date: { $lte: endDate },
+    end_date: { $gte: startDate },
+  }).populate('user_id', 'name role');
+
+  for (const request of timeOffRequests) {
+    const staff = request.user_id;
+    if (!staff || !staff._id) continue;
+    const uid = String(staff._id);
+    if (scopedUserIds && !scopedUserIds.has(uid)) continue;
+
+    const leaveDays = countOverlapDays(request.start_date, request.end_date, startDate, endDate);
+    if (leaveDays <= 0) continue;
+
+    if (!byUser.has(uid)) {
+      byUser.set(
+        uid,
+        createEmptyPayrollRow({
+          uid,
+          name: staff.name,
+          role: staff.role,
+          hourlyRate,
+        })
+      );
+    }
+
+    const row = byUser.get(uid);
+    row.leave_days += leaveDays;
+    row.leave_pay += leaveDays * LEAVE_PAID_HOURS_PER_DAY * hourlyRate;
+  }
+
   const records = Array.from(byUser.values())
     .map((row) => {
-      row.gross_pay = row.paid_hours * row.hourly_rate + row.sleep_night_pay;
+      row.paid_hours = row.day_hours + row.night_hours;
+      row.gross_pay =
+        row.paid_hours * row.hourly_rate + row.sleep_in_pay + row.leave_pay;
+
       return {
         ...row,
-        rostered_hours: Number(row.rostered_hours.toFixed(2)),
-        sleep_in_hours: Number(row.sleep_in_hours.toFixed(2)),
+        day_hours: Number(row.day_hours.toFixed(2)),
+        night_hours: Number(row.night_hours.toFixed(2)),
         paid_hours: Number(row.paid_hours.toFixed(2)),
         break_deductions: Number(row.break_deductions.toFixed(2)),
-        sleep_night_pay: Number(row.sleep_night_pay.toFixed(2)),
+        sleep_in_pay: Number(row.sleep_in_pay.toFixed(2)),
+        leave_days: row.leave_days,
+        leave_pay: Number(row.leave_pay.toFixed(2)),
         gross_pay: Number(row.gross_pay.toFixed(2)),
       };
     })
@@ -162,20 +255,20 @@ async function buildPayrollRecords({
 
   const totals = records.reduce(
     (acc, row) => {
-      acc.total_rostered_hours += row.rostered_hours || 0;
-      acc.total_sleep_in_hours += row.sleep_in_hours || 0;
+      acc.total_day_hours += row.day_hours || 0;
+      acc.total_night_hours += row.night_hours || 0;
       acc.total_paid_hours += row.paid_hours || 0;
-      acc.total_break_deductions += row.break_deductions || 0;
-      acc.total_sleep_night_pay += row.sleep_night_pay || 0;
+      acc.total_sleep_in_pay += row.sleep_in_pay || 0;
+      acc.total_leave_pay += row.leave_pay || 0;
       acc.total_gross_pay += row.gross_pay || 0;
       return acc;
     },
     {
-      total_rostered_hours: 0,
-      total_sleep_in_hours: 0,
+      total_day_hours: 0,
+      total_night_hours: 0,
       total_paid_hours: 0,
-      total_break_deductions: 0,
-      total_sleep_night_pay: 0,
+      total_sleep_in_pay: 0,
+      total_leave_pay: 0,
       total_gross_pay: 0,
     }
   );
@@ -183,11 +276,11 @@ async function buildPayrollRecords({
   return {
     records,
     totals: {
-      total_rostered_hours: Number(totals.total_rostered_hours.toFixed(2)),
-      total_sleep_in_hours: Number(totals.total_sleep_in_hours.toFixed(2)),
+      total_day_hours: Number(totals.total_day_hours.toFixed(2)),
+      total_night_hours: Number(totals.total_night_hours.toFixed(2)),
       total_paid_hours: Number(totals.total_paid_hours.toFixed(2)),
-      total_break_deductions: Number(totals.total_break_deductions.toFixed(2)),
-      total_sleep_night_pay: Number(totals.total_sleep_night_pay.toFixed(2)),
+      total_sleep_in_pay: Number(totals.total_sleep_in_pay.toFixed(2)),
+      total_leave_pay: Number(totals.total_leave_pay.toFixed(2)),
       total_gross_pay: Number(totals.total_gross_pay.toFixed(2)),
     },
   };
@@ -266,6 +359,8 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
       startDate,
       endDate,
       generatedBy: req.user?.name,
+      hourlyRate,
+      sleepNightFlatPay,
     });
 
     res.setHeader('Content-Type', 'application/pdf');
