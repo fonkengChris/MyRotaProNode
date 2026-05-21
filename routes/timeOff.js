@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const TimeOffRequest = require('../models/TimeOffRequest');
 const { requireRole, requireOwnershipOrPermission } = require('../middleware/auth');
+const {
+  findTimetableConflictForLeave,
+  buildAutoDenialReason,
+  syncAvailabilityForApprovedLeave
+} = require('../services/timeOffService');
 
 // Get all time-off requests
 router.get('/', async (req, res) => {
@@ -62,11 +67,40 @@ router.get('/:id', async (req, res) => {
 // Create new time-off request
 router.post('/', async (req, res) => {
   try {
+    const { user_id, start_date, end_date } = req.body;
+
+    if (!user_id || !start_date || !end_date) {
+      return res.status(400).json({ error: 'user_id, start_date, and end_date are required' });
+    }
+
+    const conflict = await findTimetableConflictForLeave(user_id, start_date, end_date);
+
+    if (conflict) {
+      const request = new TimeOffRequest({
+        ...req.body,
+        status: 'denied',
+        denial_reason: buildAutoDenialReason(conflict),
+        approved_at: new Date()
+      });
+      await request.save();
+      await request.populate('user_id', 'name email role');
+
+      return res.status(201).json({
+        ...request.toObject(),
+        auto_rejected: true,
+        message: request.denial_reason
+      });
+    }
+
     const request = new TimeOffRequest(req.body);
     await request.save();
     res.status(201).json(request);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to create time-off request' });
+    console.error('Error creating time-off request:', error);
+    res.status(400).json({
+      error: 'Failed to create time-off request',
+      details: error.message
+    });
   }
 });
 
@@ -124,16 +158,29 @@ router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff'
       });
     }
     
-    // Call the approve method and save the changes
-    request.approve(req.user._id); // Pass the approver's ID
+    const conflict = await findTimetableConflictForLeave(
+      request.user_id,
+      request.start_date,
+      request.end_date
+    );
+
+    if (conflict) {
+      return res.status(400).json({
+        error: 'Cannot approve leave for scheduled dates',
+        details: buildAutoDenialReason(conflict)
+      });
+    }
+
+    request.approve(req.user._id);
     await request.save();
-    
+
+    await syncAvailabilityForApprovedLeave(request);
+
     console.log('Request approved successfully');
-    
-    // Populate user info for the response
+
     await request.populate('user_id', 'name email role');
     await request.populate('approved_by', 'name email role');
-    
+
     res.json(request);
   } catch (error) {
     console.error('Error approving time-off request:', error);
