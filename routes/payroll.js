@@ -13,6 +13,11 @@ const DEFAULT_HOURLY_RATE_GBP = 12.71;
 const SLEEP_NIGHT_FLAT_PAY_GBP = 50;
 const LEAVE_PAID_HOURS_PER_DAY = 7.5;
 
+// Defense-in-depth upper bounds for admin-supplied pay-rate overrides.
+// Values outside [0, max] fall back to the default rather than being applied.
+const MAX_HOURLY_RATE_GBP = 100;
+const MAX_SLEEP_NIGHT_FLAT_PAY_GBP = 500;
+
 const NIGHT_SHIFT_TYPES = new Set(['night-wake', 'night-sleep', 'night']);
 
 function isValidYmd(value) {
@@ -55,10 +60,41 @@ function computeBreakDeduction(paidWorkHours) {
   return 0;
 }
 
-function normalizeNonNegativeNumber(value, fallback) {
+function normalizeBoundedNumber(value, fallback, max) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > max) return fallback;
   return parsed;
+}
+
+/**
+ * Resolve the pay rates to use for a report.
+ *
+ * Pay rates directly determine how much staff are paid, so overriding them is a
+ * privileged action. Only admins may override the defaults; for any other role
+ * the client-supplied hourly_rate / sleep_night_pay values are ignored and the
+ * statutory defaults are used. Admin overrides are additionally clamped to sane
+ * upper bounds so a typo (or a tampered request) cannot inflate gross pay.
+ */
+function resolvePayRates(req) {
+  if (req.user?.role !== 'admin') {
+    return {
+      hourlyRate: DEFAULT_HOURLY_RATE_GBP,
+      sleepNightFlatPay: SLEEP_NIGHT_FLAT_PAY_GBP,
+    };
+  }
+
+  return {
+    hourlyRate: normalizeBoundedNumber(
+      req.query.hourly_rate,
+      DEFAULT_HOURLY_RATE_GBP,
+      MAX_HOURLY_RATE_GBP
+    ),
+    sleepNightFlatPay: normalizeBoundedNumber(
+      req.query.sleep_night_pay,
+      SLEEP_NIGHT_FLAT_PAY_GBP,
+      MAX_SLEEP_NIGHT_FLAT_PAY_GBP
+    ),
+  };
 }
 
 function isNightShift(shiftType) {
@@ -99,11 +135,35 @@ function createEmptyPayrollRow({ uid, name, role, hourlyRate }) {
   };
 }
 
-async function getScopedUserIds(homeFilter) {
+/** Resolve a user's "home of record" for leave attribution. */
+function resolveDefaultHomeId(user) {
+  if (user.default_home_id) return String(user.default_home_id);
+  const homes = Array.isArray(user.homes) ? user.homes : [];
+  const flagged = homes.find((h) => h && h.is_default && h.home_id);
+  if (flagged) return String(flagged.home_id);
+  const first = homes.find((h) => h && h.home_id);
+  return first ? String(first.home_id) : null;
+}
+
+/**
+ * Users in scope for the given home filter, mapped to their default home id.
+ *
+ * The map key set is used to scope shift assignments (unchanged behaviour); the
+ * default-home value is used to attribute leave to exactly one home so that
+ * multi-home staff are not double-counted across single-home reports.
+ * Returns null when no home filter applies (admin viewing all homes).
+ */
+async function getScopedUsers(homeFilter) {
   if (!homeFilter) return null;
   const homeIds = Array.isArray(homeFilter) ? homeFilter : [homeFilter];
-  const users = await User.find({ 'homes.home_id': { $in: homeIds } }).select('_id');
-  return new Set(users.map((u) => String(u._id)));
+  const users = await User.find({ 'homes.home_id': { $in: homeIds } }).select(
+    '_id default_home_id homes'
+  );
+  const map = new Map();
+  for (const user of users) {
+    map.set(String(user._id), resolveDefaultHomeId(user));
+  }
+  return map;
 }
 
 async function buildPayrollRecords({
@@ -148,7 +208,10 @@ async function buildPayrollRecords({
     homeFilter = userHomeIds;
   }
 
-  const scopedUserIds = await getScopedUserIds(homeFilter);
+  const scopedUsers = await getScopedUsers(homeFilter);
+  const homeFilterSet = homeFilter
+    ? new Set(Array.isArray(homeFilter) ? homeFilter : [homeFilter])
+    : null;
 
   const shiftFilter = {
     date: { $gte: startDate, $lte: endDate },
@@ -172,7 +235,7 @@ async function buildPayrollRecords({
       const staff = assignment.user_id;
       if (!staff || !staff._id) continue;
       const uid = String(staff._id);
-      if (scopedUserIds && !scopedUserIds.has(uid)) continue;
+      if (scopedUsers && !scopedUsers.has(uid)) continue;
 
       if (!byUser.has(uid)) {
         byUser.set(
@@ -211,7 +274,15 @@ async function buildPayrollRecords({
     const staff = request.user_id;
     if (!staff || !staff._id) continue;
     const uid = String(staff._id);
-    if (scopedUserIds && !scopedUserIds.has(uid)) continue;
+
+    // Attribute leave to a single home so multi-home staff are not double-counted.
+    // When a home filter is active, a user's leave belongs to their default home;
+    // it is only included if that default home falls within the requested scope.
+    if (scopedUsers) {
+      if (!scopedUsers.has(uid)) continue;
+      const defaultHomeId = scopedUsers.get(uid);
+      if (!defaultHomeId || !homeFilterSet.has(defaultHomeId)) continue;
+    }
 
     const leaveDays = countOverlapDays(request.start_date, request.end_date, startDate, endDate);
     if (leaveDays <= 0) continue;
@@ -294,11 +365,7 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
-    const hourlyRate = normalizeNonNegativeNumber(req.query.hourly_rate, DEFAULT_HOURLY_RATE_GBP);
-    const sleepNightFlatPay = normalizeNonNegativeNumber(
-      req.query.sleep_night_pay,
-      SLEEP_NIGHT_FLAT_PAY_GBP
-    );
+    const { hourlyRate, sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
       startDate,
@@ -330,11 +397,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
-    const hourlyRate = normalizeNonNegativeNumber(req.query.hourly_rate, DEFAULT_HOURLY_RATE_GBP);
-    const sleepNightFlatPay = normalizeNonNegativeNumber(
-      req.query.sleep_night_pay,
-      SLEEP_NIGHT_FLAT_PAY_GBP
-    );
+    const { hourlyRate, sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
       startDate,

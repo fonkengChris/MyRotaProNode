@@ -12,6 +12,7 @@
     "test": "NODE_ENV=test jest",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage",
+    "seed-admin": "node scripts/seedAdminUser.js",
     "create-test-users": "node scripts/createTestUsers.js",
     "create-weekly-shifts": "node scripts/createWeeklyShifts.js",
     "restore-backup": "node scripts/restoreBackup.js",
