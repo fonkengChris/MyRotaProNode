@@ -2,6 +2,28 @@ const express = require('express');
 const router = express.Router();
 const Shift = require('../models/Shift');
 const { requireRole } = require('../middleware/auth');
+const {
+  shiftStartDate,
+  shiftEndDate,
+  EARLY_CLOCK_IN_MINUTES,
+  OVERTIME_ELIGIBLE_MINUTES,
+} = require('../utils/shiftTime');
+
+// Resolve the target staff member for a clock action: support workers may only act on
+// themselves; managers/admins/senior staff may pass a user_id to act on someone's behalf.
+function resolveClockTarget(req) {
+  const currentUser = req.user;
+  const allowedRoles = ['admin', 'home_manager', 'senior_staff'];
+  const requestedId = req.body && req.body.user_id ? String(req.body.user_id) : null;
+
+  if (requestedId && requestedId !== currentUser._id.toString()) {
+    if (!allowedRoles.includes(currentUser.role)) {
+      return { error: 'Insufficient permissions. You can only clock in/out for yourself.' };
+    }
+    return { userId: requestedId };
+  }
+  return { userId: currentUser._id.toString() };
+}
 
 function isSpecialShiftType(shiftType) {
   return String(shiftType || '').toLowerCase() === 'special';
@@ -435,6 +457,124 @@ router.post('/:id/assign', async (req, res) => {
         message: 'An unexpected error occurred while assigning staff'
       });
     }
+  }
+});
+
+// Clock in to a shift
+router.post('/:id/clock-in', async (req, res) => {
+  try {
+    const target = resolveClockTarget(req);
+    if (target.error) {
+      return res.status(403).json({ error: target.error });
+    }
+
+    const shift = await Shift.findById(req.params.id);
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found' });
+    }
+
+    const assignment = shift.assigned_staff.find(
+      (a) => a.user_id.toString() === target.userId && a.status !== 'declined'
+    );
+    if (!assignment) {
+      return res.status(403).json({
+        error: 'Not assigned to this shift',
+        message: 'You can only clock in to shifts you are assigned to.'
+      });
+    }
+
+    if (assignment.clock_in_time) {
+      return res.status(400).json({ error: 'Already clocked in to this shift' });
+    }
+
+    // Time-window gate: from EARLY_CLOCK_IN_MINUTES before start up to scheduled end.
+    const now = new Date();
+    const start = shiftStartDate(shift);
+    const end = shiftEndDate(shift);
+    const windowOpen = new Date(start.getTime() - EARLY_CLOCK_IN_MINUTES * 60000);
+    if (now < windowOpen) {
+      return res.status(400).json({
+        error: 'Too early to clock in',
+        message: `Clock-in opens at ${windowOpen.toISOString()}`
+      });
+    }
+    if (now > end) {
+      return res.status(400).json({
+        error: 'Shift has already ended',
+        message: 'Clock-in is no longer available for this shift.'
+      });
+    }
+
+    assignment.clock_in_time = now;
+    assignment.attendance_status = 'clocked_in';
+    await shift.save();
+
+    res.json(shift);
+  } catch (error) {
+    console.error('Error clocking in:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid data format', details: error.message });
+    }
+    res.status(500).json({ error: 'Internal server error', message: 'Failed to clock in' });
+  }
+});
+
+// Clock out of a shift
+router.post('/:id/clock-out', async (req, res) => {
+  try {
+    const target = resolveClockTarget(req);
+    if (target.error) {
+      return res.status(403).json({ error: target.error });
+    }
+
+    const shift = await Shift.findById(req.params.id);
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found' });
+    }
+
+    const assignment = shift.assigned_staff.find(
+      (a) => a.user_id.toString() === target.userId && a.status !== 'declined'
+    );
+    if (!assignment) {
+      return res.status(403).json({
+        error: 'Not assigned to this shift',
+        message: 'You can only clock out of shifts you are assigned to.'
+      });
+    }
+
+    if (!assignment.clock_in_time) {
+      return res.status(400).json({ error: 'You must clock in before clocking out' });
+    }
+    if (assignment.clock_out_time) {
+      return res.status(400).json({ error: 'Already clocked out of this shift' });
+    }
+
+    const now = new Date();
+    if (now <= assignment.clock_in_time) {
+      return res.status(400).json({ error: 'Clock-out time must be after clock-in time' });
+    }
+
+    assignment.clock_out_time = now;
+    assignment.attendance_status = 'clocked_out';
+    await shift.save();
+
+    // Flag overtime eligibility if clocked out well past scheduled end.
+    const scheduledEnd = shiftEndDate(shift);
+    const extraMinutes = Math.round((now.getTime() - scheduledEnd.getTime()) / 60000);
+    const overtimeEligible = extraMinutes > OVERTIME_ELIGIBLE_MINUTES;
+
+    res.json({
+      shift,
+      overtime_eligible: overtimeEligible,
+      extra_minutes: overtimeEligible ? extraMinutes : 0,
+      scheduled_end: scheduledEnd.toISOString(),
+    });
+  } catch (error) {
+    console.error('Error clocking out:', error);
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: 'Invalid data format', details: error.message });
+    }
+    res.status(500).json({ error: 'Internal server error', message: 'Failed to clock out' });
   }
 });
 

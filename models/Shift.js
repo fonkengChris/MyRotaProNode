@@ -67,7 +67,30 @@ const shiftSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     },
-    note: String
+    note: String,
+    // Attendance tracking (clock-in / clock-out)
+    clock_in_time: {
+      type: Date,
+      default: null
+    },
+    clock_out_time: {
+      type: Date,
+      default: null
+    },
+    attendance_status: {
+      type: String,
+      enum: ['not_started', 'clocked_in', 'clocked_out', 'missed'],
+      default: 'not_started'
+    },
+    // Idempotency stamps for the attendance scheduler (see services/attendanceScheduler.js)
+    clock_in_reminder_sent_at: {
+      type: Date,
+      default: null
+    },
+    clock_in_escalation_sent_at: {
+      type: Date,
+      default: null
+    }
   }],
   is_urgent: {
     type: Boolean,
@@ -99,6 +122,9 @@ shiftSchema.index({ service_id: 1 });
 shiftSchema.index({ date: 1 });
 shiftSchema.index({ 'assigned_staff.user_id': 1 });
 shiftSchema.index({ is_active: 1 });
+// Supports the attendance scheduler scan (today's shifts still awaiting clock-in).
+// Keyed on clock_in_time (null) so docs predating the attendance fields still match.
+shiftSchema.index({ date: 1, 'assigned_staff.clock_in_time': 1 });
 
 // Virtual for shift duration in hours
 shiftSchema.virtual('duration_hours').get(function() {

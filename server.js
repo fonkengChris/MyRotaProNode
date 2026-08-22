@@ -30,9 +30,14 @@ const shiftSwapRoutes = require('./routes/shiftSwaps');
 const timetableRoutes = require('./routes/timetables');
 const messageRoutes = require('./routes/messages');
 const payrollRoutes = require('./routes/payroll');
+const overtimeRoutes = require('./routes/overtime');
+const pushRoutes = require('./routes/push');
 
 // Import middleware
 const { authenticateToken } = require('./middleware/auth');
+
+// Background services
+const { startAttendanceScheduler } = require('./services/attendanceScheduler');
 
 const app = express();
 const PORT = config.port;
@@ -113,7 +118,11 @@ if (!isTestMode && isDisconnected) {
     serverSelectionTimeoutMS: 5000,
     socketTimeoutMS: 45000,
   })
-  .then(() => console.log('✅ Connected to MongoDB'))
+  .then(() => {
+    console.log('✅ Connected to MongoDB');
+    // Start the attendance reminder/escalation scheduler once the DB is ready.
+    startAttendanceScheduler();
+  })
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);
     process.exit(1);
@@ -136,6 +145,8 @@ app.use('/api/shift-swaps', authenticateToken, shiftSwapRoutes);
 app.use('/api/timetables', authenticateToken, timetableRoutes);
 app.use('/api/messages', authenticateToken, messageRoutes);
 app.use('/api/payroll', authenticateToken, payrollRoutes);
+app.use('/api/overtime', authenticateToken, overtimeRoutes);
+app.use('/api/push', authenticateToken, pushRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -5,8 +5,9 @@ const Shift = require('../models/Shift');
 const Home = require('../models/Home');
 const User = require('../models/User');
 const TimeOffRequest = require('../models/TimeOffRequest');
+const OvertimeRequest = require('../models/OvertimeRequest');
 const { requireRole } = require('../middleware/auth');
-const { getShiftHourBreakdown } = require('../utils/shiftHours');
+const { getShiftHourBreakdown, actualDurationHours } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
 const DEFAULT_HOURLY_RATE_GBP = 12.71;
@@ -132,6 +133,9 @@ function createEmptyPayrollRow({ uid, name, role, hourlyRate }) {
     leave_pay: 0,
     hourly_rate: hourlyRate,
     gross_pay: 0,
+    // Attendance reconciliation: count of shifts paid on rostered time because clock
+    // data was missing/incomplete, so a manager can review them.
+    needs_review: 0,
   };
 }
 
@@ -223,11 +227,14 @@ async function buildPayrollRecords({
 
   const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', 'name role');
 
+  // Approved overtime minutes, keyed by `${shiftId}:${userId}`, added on top of the
+  // rostered-clamped hours (see attendance reconciliation below).
+  const approvedOvertime = await OvertimeRequest.getApprovedMinutesMap(shifts.map((s) => s._id));
+
   const byUser = new Map();
   for (const shift of shifts) {
-    const br = getShiftHourBreakdown(shift);
-    const breakDeduction = computeBreakDeduction(br.paid_work_hours);
-    const paidAfterBreak = Math.max(0, br.paid_work_hours - breakDeduction);
+    // Rostered breakdown is the ceiling for pay (clamp-to-rostered policy).
+    const rosteredBr = getShiftHourBreakdown(shift);
     const assignments = Array.isArray(shift.assigned_staff) ? shift.assigned_staff : [];
     const nightShift = isNightShift(shift.shift_type);
 
@@ -236,6 +243,26 @@ async function buildPayrollRecords({
       if (!staff || !staff._id) continue;
       const uid = String(staff._id);
       if (scopedUsers && !scopedUsers.has(uid)) continue;
+
+      // Paid hours are based on ACTUAL clocked time, clamped so early clock-in / late
+      // clock-out never inflates pay. Missing/incomplete clock data falls back to
+      // rostered hours and flags the row for manager review.
+      const actual = actualDurationHours(assignment);
+      let br = rosteredBr;
+      let needsReview = false;
+      if (actual != null) {
+        const clampedDuration = Math.min(actual, rosteredBr.duration_hours);
+        br = getShiftHourBreakdown(shift, clampedDuration);
+      } else {
+        needsReview = true;
+      }
+
+      // Approved overtime (extra minutes past scheduled end) is added on top.
+      const overtimeMinutes = approvedOvertime.get(`${shift._id.toString()}:${uid}`) || 0;
+      const overtimeHours = overtimeMinutes / 60;
+
+      const breakDeduction = computeBreakDeduction(br.paid_work_hours);
+      const paidAfterBreak = Math.max(0, br.paid_work_hours - breakDeduction) + overtimeHours;
 
       if (!byUser.has(uid)) {
         byUser.set(
@@ -250,6 +277,7 @@ async function buildPayrollRecords({
       }
       const row = byUser.get(uid);
       row.break_deductions += breakDeduction;
+      if (needsReview) row.needs_review += 1;
 
       if (nightShift) {
         row.night_hours += paidAfterBreak;

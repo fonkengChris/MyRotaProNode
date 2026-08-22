@@ -40,11 +40,10 @@ const getConfig = () => {
     cors: {
       origin: process.env.CORS_ORIGIN || process.env.FRONTEND_URL || 'http://localhost:3000'
     },
-    email: {
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
+    push: {
+      publicKey: process.env.VAPID_PUBLIC_KEY,
+      privateKey: process.env.VAPID_PRIVATE_KEY,
+      subject: process.env.VAPID_SUBJECT || 'mailto:admin@myrotapro.app'
     },
     ai: {
       timeout: parseInt(process.env.AI_SOLVER_TIMEOUT) || 30000,
