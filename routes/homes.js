@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const Home = require('../models/Home');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, getUserHomeIds } = require('../middleware/auth');
 
-// Get all homes
+// Get all homes (admins see all; everyone else only their own home(s))
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const homes = await Home.find().populate('manager_id', 'name email');
+    const filter = {};
+    if (req.user.role !== 'admin') {
+      filter._id = { $in: getUserHomeIds(req.user) };
+    }
+    const homes = await Home.find(filter).populate('manager_id', 'name email');
     res.json(homes);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch homes' });
@@ -16,6 +20,10 @@ router.get('/', authenticateToken, async (req, res) => {
 // Get home by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
+    // Non-admins can only view a home they belong to.
+    if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(req.params.id)) {
+      return res.status(403).json({ error: 'Access denied. You can only view your own home.' });
+    }
     const home = await Home.findById(req.params.id).populate('manager_id', 'name email');
     if (!home) {
       return res.status(404).json({ error: 'Home not found' });

@@ -53,6 +53,21 @@ const authenticateToken = async (req, res, next) => {
   }
 };
 
+// Roles that may access management pages/data.
+// Admins see every home; home managers are scoped to their own home(s).
+const MANAGER_ROLES = ['admin', 'home_manager'];
+
+// Return the list of home id strings a user is attached to.
+const getUserHomeIds = (user) => {
+  if (!user || !Array.isArray(user.homes)) return [];
+  return user.homes
+    .filter(home => home && home.home_id)
+    .map(home => home.home_id.toString());
+};
+
+// True when the user is allowed to reach management-only functionality.
+const isManager = (user) => !!user && MANAGER_ROLES.includes(user.role);
+
 // Middleware to check if user has required role
 const requireRole = (roles) => {
   return (req, res, next) => {
@@ -212,5 +227,9 @@ module.exports = {
   requireRole,
   requireHomeAccess,
   requireResourceAccess,
-  requireOwnershipOrPermission
+  requireOwnershipOrPermission,
+  requireManager: requireRole(MANAGER_ROLES),
+  MANAGER_ROLES,
+  getUserHomeIds,
+  isManager
 };

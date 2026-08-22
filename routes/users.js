@@ -3,14 +3,14 @@ const router = express.Router();
 const User = require('../models/User');
 const Shift = require('../models/Shift');
 const mongoose = require('mongoose');
-const { requireRole, requireHomeAccess } = require('../middleware/auth');
+const { requireRole, requireHomeAccess, getUserHomeIds } = require('../middleware/auth');
 
-// Get all users (filtered by home for non-admins)
+// Get all users (admins see everyone; everyone else is scoped to their own home(s))
 router.get('/', async (req, res) => {
   try {
     const { home_id, role, type, is_active } = req.query;
     const filter = {};
-    
+
     // Validate home_id if provided
     if (home_id && home_id !== 'undefined' && home_id !== 'null') {
       filter['homes.home_id'] = home_id;
@@ -18,7 +18,19 @@ router.get('/', async (req, res) => {
     if (role) filter.role = role;
     if (type) filter.type = type;
     if (is_active !== undefined) filter.is_active = is_active === 'true';
-    
+
+    // Non-admins can only ever see staff who share one of their homes.
+    if (req.user.role !== 'admin') {
+      const myHomeIds = getUserHomeIds(req.user);
+      if (home_id && home_id !== 'undefined' && home_id !== 'null') {
+        if (!myHomeIds.includes(home_id.toString())) {
+          return res.status(403).json({ error: 'Access denied. You can only view staff in your own home.' });
+        }
+      } else {
+        filter['homes.home_id'] = { $in: myHomeIds };
+      }
+    }
+
     const users = await User.find(filter);
     res.json(users);
   } catch (error) {
@@ -26,7 +38,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get user by ID
+// Get user by ID (self, admin, or someone who shares a home)
 router.get('/:id', async (req, res) => {
   try {
     // Validate that the ID is not undefined or invalid
@@ -38,26 +50,65 @@ router.get('/:id', async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    // Non-admins may only view themselves or staff who share one of their homes.
+    if (req.user.role !== 'admin' && req.params.id !== req.user._id.toString()) {
+      const myHomeIds = getUserHomeIds(req.user);
+      const sharesHome = getUserHomeIds(user).some(id => myHomeIds.includes(id));
+      if (!sharesHome) {
+        return res.status(403).json({ error: 'Access denied. You can only view your own data or staff in your home.' });
+      }
+    }
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
 
-// Update user
+// Update user (self for own profile, or admin/home_manager for staff in their home)
 router.put('/:id', async (req, res) => {
   try {
+    const isSelf = req.params.id === req.user._id.toString();
+    const isManagerRole = ['admin', 'home_manager'].includes(req.user.role);
+
+    if (!isManagerRole && !isSelf) {
+      return res.status(403).json({ error: 'Access denied. You can only update your own profile.' });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Home managers can only manage staff in their own home(s), and never admins.
+    if (req.user.role === 'home_manager' && !isSelf) {
+      const myHomeIds = getUserHomeIds(req.user);
+      const sharesHome = getUserHomeIds(target).some(id => myHomeIds.includes(id));
+      if (!sharesHome || target.role === 'admin' || req.body.role === 'admin') {
+        return res.status(403).json({ error: 'Access denied. You can only manage staff in your own home.' });
+      }
+    }
+
     const { password, ...updateData } = req.body;
+
+    // Regular users may only edit their own profile fields, never privileged ones.
+    if (!isManagerRole) {
+      delete updateData.role;
+      delete updateData.homes;
+      delete updateData.default_home_id;
+      delete updateData.type;
+      delete updateData.is_active;
+      delete updateData.max_hours_per_week;
+      delete updateData.min_hours_per_week;
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
     );
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update user' });
@@ -190,6 +241,10 @@ router.post('/:id/set-default-home', requireRole(['admin', 'home_manager']), asy
 // Get users by home
 router.get('/by-home/:homeId', async (req, res) => {
   try {
+    // Non-admins can only list staff for a home they belong to.
+    if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(req.params.homeId)) {
+      return res.status(403).json({ error: 'Access denied. You can only view staff in your own home.' });
+    }
     const users = await User.find({ 'homes.home_id': req.params.homeId });
     res.json(users);
   } catch (error) {

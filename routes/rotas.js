@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Rota = require('../models/Rota');
 const Shift = require('../models/Shift');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const mongoose = require('mongoose');
 
 function toYyyyMmDd(date) {
@@ -33,7 +33,19 @@ router.get('/', async (req, res) => {
       if (week_start_date) filter.week_start_date.$gte = week_start_date;
       if (week_end_date) filter.week_start_date.$lte = week_end_date;
     }
-    
+
+    // Non-admins can only see rotas for their own home(s).
+    if (req.user.role !== 'admin') {
+      const myHomeIds = getUserHomeIds(req.user);
+      if (home_id) {
+        if (!myHomeIds.includes(home_id.toString())) {
+          return res.status(403).json({ error: 'Access denied. You can only view rotas for your own home.' });
+        }
+      } else {
+        filter.home_id = { $in: myHomeIds };
+      }
+    }
+
     const rotas = await Rota.find(filter)
       .populate('home_id', 'name')
       .populate('service_id', 'name')
@@ -56,16 +68,30 @@ router.get('/:id', async (req, res) => {
     if (!rota) {
       return res.status(404).json({ error: 'Rota not found' });
     }
-    
+
+    // Non-admins can only view rotas for a home they belong to.
+    if (req.user.role !== 'admin') {
+      const rotaHomeId = (rota.home_id && rota.home_id._id ? rota.home_id._id : rota.home_id);
+      if (!rotaHomeId || !getUserHomeIds(req.user).includes(rotaHomeId.toString())) {
+        return res.status(403).json({ error: 'Access denied. You can only view rotas for your own home.' });
+      }
+    }
+
     res.json(rota);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch rota' });
   }
 });
 
-// Create new rota
-router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+// Create new rota (managers only, scoped to their home)
+router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
   try {
+    if (req.user.role === 'home_manager') {
+      const homeId = req.body.home_id && req.body.home_id.toString();
+      if (!homeId || !getUserHomeIds(req.user).includes(homeId)) {
+        return res.status(403).json({ error: 'Access denied. You can only create rotas for your own home.' });
+      }
+    }
     const rota = new Rota(req.body);
     await rota.save();
     res.status(201).json(rota);
@@ -74,19 +100,29 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
   }
 });
 
-// Update rota
-router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+// Update rota (managers only, scoped to their home)
+router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
   try {
+    if (req.user.role === 'home_manager') {
+      const existing = await Rota.findById(req.params.id).select('home_id');
+      if (!existing) {
+        return res.status(404).json({ error: 'Rota not found' });
+      }
+      if (!getUserHomeIds(req.user).includes(existing.home_id.toString())) {
+        return res.status(403).json({ error: 'Access denied. You can only update rotas for your own home.' });
+      }
+    }
+
     const rota = await Rota.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true, runValidators: true }
     );
-    
+
     if (!rota) {
       return res.status(404).json({ error: 'Rota not found' });
     }
-    
+
     res.json(rota);
   } catch (error) {
     res.status(400).json({ error: 'Failed to update rota' });
