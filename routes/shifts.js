@@ -7,6 +7,7 @@ const {
   shiftEndDate,
   EARLY_CLOCK_IN_MINUTES,
   OVERTIME_ELIGIBLE_MINUTES,
+  LATE_ARRIVAL_MINUTES,
 } = require('../utils/shiftTime');
 
 // Resolve the target staff member for a clock action: support workers may only act on
@@ -122,6 +123,113 @@ router.get('/available', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch available shifts' });
   }
 });
+
+// Get clock-in / clock-out logs across all staff (admin analysis page).
+// Flattens each assigned staff member's attendance into one log row per shift.
+router.get(
+  '/attendance/logs',
+  requireRole(['admin', 'home_manager', 'senior_staff']),
+  async (req, res) => {
+    try {
+      const { home_id, start_date, end_date, status } = req.query;
+      const filter = { is_active: true };
+
+      if (home_id && home_id !== 'undefined' && home_id !== 'null') {
+        filter.home_id = home_id;
+      }
+      if (start_date || end_date) {
+        filter.date = {};
+        if (start_date) filter.date.$gte = start_date;
+        if (end_date) filter.date.$lte = end_date;
+      }
+
+      const shifts = await Shift.find(filter)
+        .populate('home_id', 'name')
+        .populate('service_id', 'name')
+        .populate('assigned_staff.user_id', 'name email role')
+        .sort({ date: -1, start_time: -1 });
+
+      const logs = [];
+      for (const shift of shifts) {
+        const scheduledStart = shiftStartDate(shift);
+        const scheduledEnd = shiftEndDate(shift);
+
+        for (const a of shift.assigned_staff || []) {
+          if (a.status === 'declined') continue;
+
+          // Skip staff who were never scheduled to a real attendance state.
+          const attendanceStatus = a.attendance_status || 'not_started';
+          if (status && status !== 'all' && attendanceStatus !== status) continue;
+
+          const clockIn = a.clock_in_time ? new Date(a.clock_in_time) : null;
+          const clockOut = a.clock_out_time ? new Date(a.clock_out_time) : null;
+
+          // Minutes late = clock-in past scheduled start (0 if early / on time / absent).
+          const minutesLate = clockIn
+            ? Math.max(0, Math.round((clockIn.getTime() - scheduledStart.getTime()) / 60000))
+            : 0;
+          // Minutes over = clock-out past scheduled end (0 if on time / early).
+          const minutesOver = clockOut
+            ? Math.max(0, Math.round((clockOut.getTime() - scheduledEnd.getTime()) / 60000))
+            : 0;
+          const workedMinutes =
+            clockIn && clockOut
+              ? Math.max(0, Math.round((clockOut.getTime() - clockIn.getTime()) / 60000))
+              : null;
+          const scheduledMinutes = Math.max(
+            0,
+            Math.round((scheduledEnd.getTime() - scheduledStart.getTime()) / 60000)
+          );
+
+          const user = a.user_id && typeof a.user_id === 'object' ? a.user_id : null;
+
+          logs.push({
+            shift_id: shift._id,
+            user_id: user ? user._id : a.user_id,
+            user_name: user ? user.name : 'Unknown',
+            user_email: user ? user.email : null,
+            user_role: user ? user.role : null,
+            home_name:
+              shift.home_id && typeof shift.home_id === 'object' ? shift.home_id.name : null,
+            service_name:
+              shift.service_id && typeof shift.service_id === 'object'
+                ? shift.service_id.name
+                : null,
+            date: shift.date,
+            start_time: shift.start_time,
+            end_time: shift.end_time,
+            shift_type: shift.shift_type,
+            scheduled_start: scheduledStart.toISOString(),
+            scheduled_end: scheduledEnd.toISOString(),
+            scheduled_minutes: scheduledMinutes,
+            attendance_status: attendanceStatus,
+            clock_in_time: clockIn ? clockIn.toISOString() : null,
+            clock_out_time: clockOut ? clockOut.toISOString() : null,
+            worked_minutes: workedMinutes,
+            minutes_late: minutesLate,
+            minutes_over: minutesOver,
+            is_late: minutesLate >= LATE_ARRIVAL_MINUTES,
+          });
+        }
+      }
+
+      // Summary counts for the dashboard cards.
+      const summary = {
+        total: logs.length,
+        clocked_in: logs.filter((l) => l.attendance_status === 'clocked_in').length,
+        clocked_out: logs.filter((l) => l.attendance_status === 'clocked_out').length,
+        not_started: logs.filter((l) => l.attendance_status === 'not_started').length,
+        missed: logs.filter((l) => l.attendance_status === 'missed').length,
+        late: logs.filter((l) => l.is_late).length,
+      };
+
+      res.json({ logs, summary });
+    } catch (error) {
+      console.error('Error fetching attendance logs:', error);
+      res.status(500).json({ error: 'Failed to fetch attendance logs' });
+    }
+  }
+);
 
 // Get shift by ID
 router.get('/:id', async (req, res) => {
