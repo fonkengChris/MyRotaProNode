@@ -134,8 +134,8 @@ describe('User Model', () => {
       expect(permissions.can_view_all_homes).toBe(false);
     });
 
-    test('should return correct permissions for home_manager', async () => {
-      const user = await createTestUser({ role: 'home_manager' });
+    test('should return correct permissions for key_worker', async () => {
+      const user = await createTestUser({ role: 'key_worker' });
       const permissions = user.getPermissions();
 
       expect(permissions.can_manage_users).toBe(true);

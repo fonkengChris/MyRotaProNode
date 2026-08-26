@@ -56,7 +56,7 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 });
 
 // Update home
-router.put('/:id', authenticateToken, requireRole(['admin', 'home_manager']), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const home = await Home.findByIdAndUpdate(
       req.params.id,

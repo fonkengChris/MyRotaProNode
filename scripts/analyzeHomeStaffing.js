@@ -180,7 +180,7 @@ async function generateCSVReport() {
     console.log('📊 Generating CSV Report...\n');
 
     // CSV Header
-    let csv = 'Home,Location,Manager,Total Staff,Full Time,Part Time,Bank,Admin,Home Manager,Senior Staff,Support Worker\n';
+    let csv = 'Home,Location,Manager,Total Staff,Full Time,Part Time,Bank,Admin,Key Worker,Senior Staff,Support Worker\n';
 
     for (const home of homes) {
       const homeUsers = users.filter(u => 
@@ -193,14 +193,14 @@ async function generateCSVReport() {
         parttime: homeUsers.filter(u => u.type === 'parttime').length,
         bank: homeUsers.filter(u => u.type === 'bank').length,
         admin: homeUsers.filter(u => u.role === 'admin').length,
-        home_manager: homeUsers.filter(u => u.role === 'home_manager').length,
+        key_worker: homeUsers.filter(u => u.role === 'key_worker').length,
         senior_staff: homeUsers.filter(u => u.role === 'senior_staff').length,
         support_worker: homeUsers.filter(u => u.role === 'support_worker').length
       };
 
       const managerName = home.manager_id?.name || 'Not assigned';
       
-      csv += `"${home.name}","${home.location.city}","${managerName}",${counts.total},${counts.fulltime},${counts.parttime},${counts.bank},${counts.admin},${counts.home_manager},${counts.senior_staff},${counts.support_worker}\n`;
+      csv += `"${home.name}","${home.location.city}","${managerName}",${counts.total},${counts.fulltime},${counts.parttime},${counts.bank},${counts.admin},${counts.key_worker},${counts.senior_staff},${counts.support_worker}\n`;
     }
 
     // Write to file

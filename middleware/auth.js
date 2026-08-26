@@ -54,8 +54,8 @@ const authenticateToken = async (req, res, next) => {
 };
 
 // Roles that may access management pages/data.
-// Admins see every home; home managers are scoped to their own home(s).
-const MANAGER_ROLES = ['admin', 'home_manager'];
+// Admins see every home; key workers are scoped to their own home(s).
+const MANAGER_ROLES = ['admin', 'key_worker'];
 
 // Return the list of home id strings a user is attached to.
 const getUserHomeIds = (user) => {
@@ -153,14 +153,14 @@ const requireResourceAccess = (resourceType, resourceIdParam) => {
       switch (resourceType) {
         case 'rota':
           // Check if user can manage rotas for the home
-          if (['home_manager', 'senior_staff'].includes(req.user.role)) {
+          if (['key_worker', 'senior_staff'].includes(req.user.role)) {
             return next();
           }
           break;
           
         case 'user':
           // Check if user is managing someone in their home
-          if (['home_manager'].includes(req.user.role)) {
+          if (['key_worker'].includes(req.user.role)) {
             return next();
           }
           break;

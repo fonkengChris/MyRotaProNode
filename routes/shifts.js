@@ -14,7 +14,7 @@ const {
 // themselves; managers/admins/senior staff may pass a user_id to act on someone's behalf.
 function resolveClockTarget(req) {
   const currentUser = req.user;
-  const allowedRoles = ['admin', 'home_manager', 'senior_staff'];
+  const allowedRoles = ['admin', 'key_worker', 'senior_staff'];
   const requestedId = req.body && req.body.user_id ? String(req.body.user_id) : null;
 
   if (requestedId && requestedId !== currentUser._id.toString()) {
@@ -128,7 +128,7 @@ router.get('/available', async (req, res) => {
 // Flattens each assigned staff member's attendance into one log row per shift.
 router.get(
   '/attendance/logs',
-  requireRole(['admin', 'home_manager', 'senior_staff']),
+  requireRole(['admin']),
   async (req, res) => {
     try {
       const { home_id, start_date, end_date, status } = req.query;
@@ -245,7 +245,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new shift
-router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
 
     
@@ -350,7 +350,7 @@ router.post('/', requireRole(['admin', 'home_manager', 'senior_staff']), async (
 });
 
 // Update shift
-router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     // Check for shift overlaps (excluding current shift, handles multi-day shifts)
     const { home_id, date, start_time, end_time, shift_type } = req.body;
@@ -451,7 +451,7 @@ router.put('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async
 });
 
 // Delete shift
-router.delete('/:id', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     const shift = await Shift.findByIdAndDelete(req.params.id);
     if (!shift) {
@@ -471,7 +471,7 @@ router.post('/:id/assign', async (req, res) => {
     
     // Check permissions: admins/managers/senior staff can assign anyone, support workers can only assign themselves
     const currentUser = req.user; // This should be set by the authenticateToken middleware
-    const allowedRoles = ['admin', 'home_manager', 'senior_staff'];
+    const allowedRoles = ['admin', 'key_worker', 'senior_staff'];
     
     if (!allowedRoles.includes(currentUser.role) && currentUser._id.toString() !== user_id) {
       return res.status(403).json({ 
@@ -687,7 +687,7 @@ router.post('/:id/clock-out', async (req, res) => {
 });
 
 // Remove staff from shift
-router.delete('/:id/assign/:userId', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     const shift = await Shift.findById(req.params.id);
     
@@ -705,7 +705,7 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'home_manager', 'seni
 });
 
 // Check for scheduling conflicts
-router.get('/conflicts/check', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.get('/conflicts/check', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     const { home_id, start_date, end_date } = req.query;
     

@@ -325,15 +325,15 @@ function sixDayOutreach() {
 // ---------------------------------------------------------------------------
 
 const STAFF_PLAN = [
-  // --- Home managers: one per home (8, all fulltime) ---------------------
-  { role: 'home_manager', type: 'fulltime', homes: ['willow'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['oakwood'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['maple'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['birchwood'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['cedar'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['elm'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['rowan'] },
-  { role: 'home_manager', type: 'fulltime', homes: ['sunrise'] },
+  // --- Key workers: one per home (8, all fulltime) ---------------------
+  { role: 'key_worker', type: 'fulltime', homes: ['willow'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['oakwood'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['maple'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['birchwood'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['cedar'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['elm'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['rowan'] },
+  { role: 'key_worker', type: 'fulltime', homes: ['sunrise'] },
 
   // --- Senior staff (6): 5 SL homes + a 2nd senior for heavy Birchwood ---
   { role: 'senior_staff', type: 'fulltime', homes: ['willow'] },
@@ -400,7 +400,7 @@ function hoursForType(type) {
 }
 
 function skillsForRole(role) {
-  if (role === 'senior_staff' || role === 'home_manager') {
+  if (role === 'senior_staff' || role === 'key_worker') {
     return ['medication', 'personal_care', 'domestic_support', 'social_support', 'specialist_care'];
   }
   return ['personal_care', 'domestic_support', 'social_support'];

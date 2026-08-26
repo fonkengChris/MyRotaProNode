@@ -149,12 +149,12 @@ describe('Auth Middleware', () => {
     });
 
     test('should allow access for one of multiple roles', () => {
-      const user = { role: 'home_manager' };
+      const user = { role: 'key_worker' };
       const req = createMockReq({}, user);
       const res = createMockRes();
       const next = createMockNext();
 
-      const middleware = requireRole(['admin', 'home_manager']);
+      const middleware = requireRole(['admin', 'key_worker']);
       middleware(req, res, next);
 
       expect(next).toHaveBeenCalled();

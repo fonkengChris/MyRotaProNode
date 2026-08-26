@@ -15,7 +15,7 @@ router.post('/register', [
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
   body('phone').matches(/^[\+]?[1-9][\d]{0,15}$/).withMessage('Please provide a valid phone number'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
-  body('role').isIn(['admin', 'home_manager', 'senior_staff', 'support_worker']).withMessage('Invalid role'),
+  body('role').isIn(['admin', 'key_worker', 'senior_staff', 'support_worker']).withMessage('Invalid role'),
   body('type').optional().isIn(['fulltime', 'parttime', 'bank']).withMessage('Invalid employment type'),
   body('home_id').optional().isMongoId().withMessage('Invalid home ID')
 ], async (req, res) => {

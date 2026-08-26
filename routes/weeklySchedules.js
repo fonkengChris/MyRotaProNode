@@ -59,7 +59,7 @@ router.get('/', requireRole(['admin']), async (req, res) => {
 });
 
 // Create new weekly schedule for a home
-router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
 
     
@@ -104,7 +104,7 @@ router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // Update existing weekly schedule
-router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
 
     
@@ -162,7 +162,7 @@ router.delete('/:id', requireRole(['admin']), async (req, res) => {
 });
 
 // Add shift to a specific day
-router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const { id, dayName } = req.params;
     const shiftData = req.body;
@@ -206,7 +206,7 @@ router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'home_manager']),
 });
 
 // Remove shift from a specific day
-router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const { id, dayName, shiftIndex } = req.params;
     
@@ -240,7 +240,7 @@ router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'ho
 });
 
 // Toggle day active/inactive status
-router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const { id, dayName } = req.params;
     

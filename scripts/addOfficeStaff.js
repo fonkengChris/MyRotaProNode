@@ -70,7 +70,7 @@ async function addOfficeStaff() {
         email: 'manager.office@myrotapro.com',
         phone: '+441234567891',
         password: COMMON_PASSWORD,
-        role: 'home_manager',
+        role: 'key_worker',
         type: 'fulltime',
         homes: [{
           home_id: office._id,
@@ -105,7 +105,7 @@ async function addOfficeStaff() {
     console.log('\n📊 Verification:');
     const totalUsers = await User.countDocuments({ is_active: true });
     const adminUsers = await User.countDocuments({ role: 'admin', is_active: true });
-    const managerUsers = await User.countDocuments({ role: 'home_manager', is_active: true });
+    const managerUsers = await User.countDocuments({ role: 'key_worker', is_active: true });
     const officeUsers = await User.countDocuments({ 
       'homes.home_id': office._id, 
       is_active: true 

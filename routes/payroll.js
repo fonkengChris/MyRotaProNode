@@ -407,7 +407,7 @@ async function buildPayrollRecords({
 }
 
 // JSON payroll report
-router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.get('/', requireRole(['admin']), async (req, res) => {
   try {
     const dateRange = requireDateRange(req, res);
     if (!dateRange) return;
@@ -442,7 +442,7 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // PDF payroll export
-router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.get('/pdf', requireRole(['admin']), async (req, res) => {
   try {
     const dateRange = requireDateRange(req, res);
     if (!dateRange) return;

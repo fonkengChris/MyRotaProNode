@@ -10,7 +10,7 @@ router.get('/', async (req, res) => {
   try {
     const { status, home_id } = req.query;
     const currentUser = req.user;
-    const isManager = ['admin', 'home_manager'].includes(currentUser.role);
+    const isManager = ['admin', 'key_worker'].includes(currentUser.role);
 
     const filter = {};
     if (!isManager) {

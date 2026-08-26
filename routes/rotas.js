@@ -84,9 +84,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new rota (managers only, scoped to their home)
-router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
-    if (req.user.role === 'home_manager') {
+    if (req.user.role === 'key_worker') {
       const homeId = req.body.home_id && req.body.home_id.toString();
       if (!homeId || !getUserHomeIds(req.user).includes(homeId)) {
         return res.status(403).json({ error: 'Access denied. You can only create rotas for your own home.' });
@@ -101,9 +101,9 @@ router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // Update rota (managers only, scoped to their home)
-router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
-    if (req.user.role === 'home_manager') {
+    if (req.user.role === 'key_worker') {
       const existing = await Rota.findById(req.params.id).select('home_id');
       if (!existing) {
         return res.status(404).json({ error: 'Rota not found' });
@@ -130,7 +130,7 @@ router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // Delete rota
-router.delete('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.delete('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const rota = await Rota.findById(req.params.id).select('shifts home_id service_id week_start_date week_end_date status');
     if (!rota) {
@@ -172,7 +172,7 @@ router.delete('/:id', requireRole(['admin', 'home_manager']), async (req, res) =
 });
 
 // Publish rota
-router.post('/:id/publish', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/publish', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const rota = await Rota.findById(req.params.id);
     
@@ -188,7 +188,7 @@ router.post('/:id/publish', requireRole(['admin', 'home_manager']), async (req, 
 });
 
 // Archive rota
-router.post('/:id/archive', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/archive', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const rota = await Rota.findById(req.params.id);
     
@@ -204,7 +204,7 @@ router.post('/:id/archive', requireRole(['admin', 'home_manager']), async (req, 
 });
 
 // Revert rota to draft
-router.post('/:id/revert', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/revert', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const rota = await Rota.findById(req.params.id);
     

@@ -1,6 +1,30 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// Legacy role values that predate a rename, mapped to their current canonical role.
+// The DB may still hold `home_manager` docs that were never migrated; we transparently
+// treat them as `key_worker` on both read and filtered queries so nothing breaks.
+const LEGACY_ROLE_ALIASES = { home_manager: 'key_worker' };
+
+// Reverse map: canonical role -> legacy value(s) it should also match when querying.
+const CANONICAL_TO_LEGACY = Object.entries(LEGACY_ROLE_ALIASES).reduce((acc, [legacy, canonical]) => {
+  (acc[canonical] = acc[canonical] || []).push(legacy);
+  return acc;
+}, {});
+
+// Map a stored/incoming role to its canonical value (e.g. home_manager -> key_worker).
+function normalizeRole(role) {
+  return LEGACY_ROLE_ALIASES[role] || role;
+}
+
+// Build a Mongoose filter value for a role that also matches its legacy aliases, so
+// `?role=key_worker` (or the raw legacy value) returns un-migrated documents too.
+function roleQueryValue(role) {
+  const canonical = normalizeRole(role);
+  const legacy = CANONICAL_TO_LEGACY[canonical];
+  return legacy && legacy.length ? { $in: [canonical, ...legacy] } : canonical;
+}
+
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -30,7 +54,10 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'home_manager', 'senior_staff', 'support_worker'],
+    enum: ['admin', 'key_worker', 'senior_staff', 'support_worker'],
+    // Normalize legacy aliases on assignment so the enum never rejects old values
+    // and every read of `role` returns the canonical role.
+    set: normalizeRole,
     default: 'support_worker',
     required: true
   },
@@ -100,6 +127,16 @@ userSchema.index({ role: 1 });
 userSchema.index({ type: 1 });
 userSchema.index({ is_active: 1 });
 
+// Normalize legacy role values (e.g. home_manager) on documents hydrated from the DB.
+// Setters don't run on init, so this covers reads of un-migrated records — after this
+// `user.role` is always canonical, so every requireRole/permission check just works.
+userSchema.post('init', function() {
+  const normalized = normalizeRole(this.role);
+  if (normalized !== this.role) {
+    this.role = normalized;
+  }
+});
+
 // Pre-save middleware to hash password and set default hours based on type
 userSchema.pre('save', async function(next) {
   // Set minimum hours based on employment type if not already set
@@ -138,13 +175,13 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Instance method to get user permissions
 userSchema.methods.getPermissions = function() {
   const permissions = {
-    can_manage_users: ['admin', 'home_manager'].includes(this.role),
-    can_manage_rotas: ['admin', 'home_manager', 'senior_staff'].includes(this.role),
-    can_approve_requests: ['admin', 'home_manager', 'senior_staff'].includes(this.role),
+    can_manage_users: ['admin', 'key_worker'].includes(this.role),
+    can_manage_rotas: ['admin', 'key_worker', 'senior_staff'].includes(this.role),
+    can_approve_requests: ['admin', 'key_worker', 'senior_staff'].includes(this.role),
     can_view_all_homes: this.role === 'admin',
     can_manage_homes: this.role === 'admin',
-    can_use_ai_solver: ['admin', 'home_manager'].includes(this.role),
-    can_allocate_homes: ['admin', 'home_manager'].includes(this.role)
+    can_use_ai_solver: ['admin', 'key_worker'].includes(this.role),
+    can_allocate_homes: ['admin', 'key_worker'].includes(this.role)
   };
   
   return permissions;
@@ -201,13 +238,18 @@ userSchema.methods.removeHome = function(homeId) {
 };
 
 // Static method to find users by role and home
+// Expose role helpers on the model so routes/services can build legacy-aware filters.
+userSchema.statics.normalizeRole = normalizeRole;
+userSchema.statics.roleQueryValue = roleQueryValue;
+
 userSchema.statics.findByRoleAndHome = function(role, homeId) {
-  if (role === 'admin') {
-    return this.find({ role });
+  const roleFilter = roleQueryValue(role);
+  if (normalizeRole(role) === 'admin') {
+    return this.find({ role: roleFilter });
   }
-  return this.find({ 
-    role, 
-    'homes.home_id': homeId 
+  return this.find({
+    role: roleFilter,
+    'homes.home_id': homeId
   });
 };
 

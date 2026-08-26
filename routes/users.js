@@ -15,7 +15,8 @@ router.get('/', async (req, res) => {
     if (home_id && home_id !== 'undefined' && home_id !== 'null') {
       filter['homes.home_id'] = home_id;
     }
-    if (role) filter.role = role;
+    // Match legacy role aliases too (e.g. home_manager rows count as key_worker).
+    if (role) filter.role = User.roleQueryValue(role);
     if (type) filter.type = type;
     if (is_active !== undefined) filter.is_active = is_active === 'true';
 
@@ -66,11 +67,11 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Update user (self for own profile, or admin/home_manager for staff in their home)
+// Update user (self for own profile, or admin/key_worker for staff in their home)
 router.put('/:id', async (req, res) => {
   try {
     const isSelf = req.params.id === req.user._id.toString();
-    const isManagerRole = ['admin', 'home_manager'].includes(req.user.role);
+    const isManagerRole = ['admin', 'key_worker'].includes(req.user.role);
 
     if (!isManagerRole && !isSelf) {
       return res.status(403).json({ error: 'Access denied. You can only update your own profile.' });
@@ -81,8 +82,8 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Home managers can only manage staff in their own home(s), and never admins.
-    if (req.user.role === 'home_manager' && !isSelf) {
+    // Key workers can only manage staff in their own home(s), and never admins.
+    if (req.user.role === 'key_worker' && !isSelf) {
       const myHomeIds = getUserHomeIds(req.user);
       const sharesHome = getUserHomeIds(target).some(id => myHomeIds.includes(id));
       if (!sharesHome || target.role === 'admin' || req.body.role === 'admin') {
@@ -140,7 +141,7 @@ router.delete('/:id', requireRole(['admin']), async (req, res) => {
 });
 
 // Deactivate user
-router.post('/:id/deactivate', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/deactivate', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
       req.params.id,
@@ -159,7 +160,7 @@ router.post('/:id/deactivate', requireRole(['admin', 'home_manager']), async (re
 });
 
 // Add home to user
-router.post('/:id/add-home', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/add-home', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const { home_id, is_default = false } = req.body;
     
@@ -190,7 +191,7 @@ router.post('/:id/add-home', requireRole(['admin', 'home_manager']), async (req,
 });
 
 // Remove home from user
-router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -210,7 +211,7 @@ router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'home_manager'])
 });
 
 // Set default home for user
-router.post('/:id/set-default-home', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/:id/set-default-home', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const { home_id } = req.body;
     

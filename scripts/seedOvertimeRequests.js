@@ -10,7 +10,7 @@
  *   ~35% pending
  *   ~25% denied     (approved_by + approved_at + denial_reason set)
  *
- * Approver = a home_manager of the shift's home, falling back to any admin.
+ * Approver = a key_worker of the shift's home, falling back to any admin.
  * Re-runnable: clears existing overtime requests first.
  *
  * Usage: node scripts/seedOvertimeRequests.js
@@ -45,8 +45,8 @@ async function run() {
   );
   console.log('✅ Connected to MongoDB');
 
-  // Build approver lookup: home_id -> a home_manager for that home; plus an admin fallback.
-  const managers = await User.find({ role: { $in: ['home_manager', 'senior_staff'] } }).select('_id name role homes');
+  // Build approver lookup: home_id -> a key_worker for that home; plus an admin fallback.
+  const managers = await User.find({ role: { $in: ['key_worker', 'senior_staff'] } }).select('_id name role homes');
   const admin = await User.findOne({ role: 'admin' }).select('_id name');
   const managerByHome = new Map();
   for (const m of managers) {

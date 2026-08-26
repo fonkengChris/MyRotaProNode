@@ -219,7 +219,7 @@ const timetableSchema = new mongoose.Schema({
   },
   accessible_by_roles: [{
     type: String,
-    enum: ['admin', 'home_manager', 'senior_staff', 'support_worker']
+    enum: ['admin', 'key_worker', 'senior_staff', 'support_worker']
   }],
   accessible_by_users: [{
     type: mongoose.Schema.Types.ObjectId,

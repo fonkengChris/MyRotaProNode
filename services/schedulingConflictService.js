@@ -144,7 +144,7 @@ class SchedulingConflictService {
         };
       }
 
-      // Full-time staff: weekly cap (default 48h); exceeding requires admin or home_manager
+      // Full-time staff: weekly cap (default 48h); exceeding requires admin or key_worker
       const staff = await User.findById(userId).select('type').lean();
       if (staff && staff.type === 'fulltime') {
         const policy = await ConstraintWeights.getFulltimeWeeklyHoursPolicy();

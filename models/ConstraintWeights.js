@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const FULLTIME_WEEKLY_HOURS_CAP_DEFAULT = 48;
 
 /** Roles that may assign shifts that exceed the full-time weekly cap (see parameters.approver_roles_for_hours_over_cap). */
-const FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT = ['admin', 'home_manager'];
+const FULLTIME_OVER_CAP_APPROVER_ROLES_DEFAULT = ['admin', 'key_worker'];
 
 const constraintWeightsSchema = new mongoose.Schema({
   name: {

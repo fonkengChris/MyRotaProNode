@@ -54,7 +54,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new service
-router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const service = new Service(req.body);
     await service.save();
@@ -65,7 +65,7 @@ router.post('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // Update service
-router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const service = await Service.findByIdAndUpdate(
       req.params.id,
@@ -84,7 +84,7 @@ router.put('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
 });
 
 // Delete service
-router.delete('/:id', requireRole(['admin', 'home_manager']), async (req, res) => {
+router.delete('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
     const service = await Service.findByIdAndDelete(req.params.id);
     if (!service) {

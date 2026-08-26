@@ -10,7 +10,7 @@ const router = express.Router();
 // @access  Private (Managers and Admins only)
 router.post('/generate-rota', [
   authenticateToken,
-  requireRole(['admin', 'home_manager']),
+  requireRole(['admin', 'key_worker']),
   body('week_start_date').isISO8601().withMessage('Valid week start date is required'),
   body('week_end_date').isISO8601().withMessage('Valid week end date is required'),
   body('home_ids').custom((value) => {
@@ -206,7 +206,7 @@ router.post('/generate-rota', [
 // @access  Private (Managers and Admins only)
 router.post('/optimize-rota', [
   authenticateToken,
-  requireRole(['admin', 'home_manager']),
+  requireRole(['admin', 'key_worker']),
   body('rota_id').isMongoId().withMessage('Valid rota ID is required'),
   body('optimization_type').isIn(['staff_distribution', 'shift_timing', 'workload_balance']).withMessage('Valid optimization type is required')
 ], async (req, res) => {
@@ -249,7 +249,7 @@ router.post('/optimize-rota', [
 // @access  Private (Managers and Admins only)
 router.post('/validate-rota', [
   authenticateToken,
-  requireRole(['admin', 'home_manager']),
+  requireRole(['admin', 'key_worker']),
   body('rota_data').isObject().withMessage('Rota data is required')
 ], async (req, res) => {
   try {
@@ -309,7 +309,7 @@ router.post('/validate-rota', [
 // @access  Private (Managers and Admins only)
 router.get('/constraints', [
   authenticateToken,
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin', 'key_worker'])
 ], async (req, res) => {
   try {
     const { home_id, service_id } = req.query;
@@ -404,7 +404,7 @@ router.post('/update-constraints', [
 // @access  Private (Managers and Admins only)
 router.get('/performance', [
   authenticateToken,
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin', 'key_worker'])
 ], async (req, res) => {
   try {
     const { home_id, date_range } = req.query;

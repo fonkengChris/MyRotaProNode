@@ -36,7 +36,7 @@ describe('attendanceScheduler.runAttendanceCheck', () => {
     });
     manager = await createTestUser({
       email: `manager${Date.now()}@example.com`,
-      role: 'home_manager',
+      role: 'key_worker',
       homes: [{ home_id: home._id }],
     });
     admin = await createTestUser({

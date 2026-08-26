@@ -24,7 +24,8 @@ async function getManagementRecipients(homeId) {
     is_active: true,
     $or: [
       { role: 'admin' },
-      { role: 'home_manager', 'homes.home_id': homeId },
+      // roleQueryValue also matches legacy home_manager rows that were never migrated.
+      { role: User.roleQueryValue('key_worker'), 'homes.home_id': homeId },
     ],
   }).select('name email role');
 }
@@ -51,7 +52,7 @@ async function notifyLateStaff(shift, staffUser) {
 
   // Use a manager/admin of the home as the in-app sender.
   const managers = await getManagementRecipients(shift.home_id && shift.home_id._id ? shift.home_id._id : shift.home_id);
-  const sender = managers.find((m) => m.role === 'home_manager') || managers[0];
+  const sender = managers.find((m) => m.role === 'key_worker') || managers[0];
 
   await safeSendMessage(sender && sender._id, staffUser._id, body);
 
@@ -64,7 +65,7 @@ async function notifyLateStaff(shift, staffUser) {
 }
 
 /**
- * 15-minute escalation to management (home managers + all admins).
+ * 15-minute escalation to management (key workers + all admins).
  * @param {object} shift - Shift doc (home_id may be populated with a name).
  * @param {object} staffUser - populated user for the late assignment.
  */

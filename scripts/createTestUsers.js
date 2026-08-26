@@ -23,8 +23,8 @@ const testUsers = [
   { name: 'Emma Senior', role: 'senior_staff', email: 'emma_senior@rcs.com' },
   { name: 'David Senior', role: 'senior_staff', email: 'david_senior@rcs.com' },
   
-  // 1 Home Manager
-  { name: 'John Manager', role: 'home_manager', email: 'john_manager@rcs.com' },
+  // 1 Key worker
+  { name: 'John Manager', role: 'key_worker', email: 'john_manager@rcs.com' },
   
   // 1 Admin
   { name: 'John Admin', role: 'admin', email: 'john_admin@rcs.com' }

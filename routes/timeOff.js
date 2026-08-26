@@ -137,7 +137,7 @@ router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
 });
 
 // Approve time-off request
-router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.post('/:id/approve', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     console.log('Approving time-off request:', req.params.id, 'by user:', req.user._id);
     
@@ -197,7 +197,7 @@ router.post('/:id/approve', requireRole(['admin', 'home_manager', 'senior_staff'
 });
 
 // Deny time-off request
-router.post('/:id/deny', requireRole(['admin', 'home_manager', 'senior_staff']), async (req, res) => {
+router.post('/:id/deny', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
     console.log('Denying time-off request:', req.params.id, 'by user:', req.user._id, 'reason:', req.body.reason);
     

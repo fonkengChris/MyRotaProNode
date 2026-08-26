@@ -365,7 +365,7 @@ router.get('/available-shifts/:userId', authenticateToken, async (req, res) => {
     const { start_date, end_date, home_id } = req.query;
 
     // Only allow users to see their own available shifts or if they're admin/manager
-    if (userId !== currentUserId && !['admin', 'home_manager', 'senior_staff'].includes(req.user.role)) {
+    if (userId !== currentUserId && !['admin', 'key_worker', 'senior_staff'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -424,7 +424,7 @@ router.get('/stats/:userId', authenticateToken, async (req, res) => {
     const currentUserId = req.user._id.toString();
 
     // Only allow users to see their own stats or if they're admin/manager
-    if (userId !== currentUserId && !['admin', 'home_manager', 'senior_staff'].includes(req.user.role)) {
+    if (userId !== currentUserId && !['admin', 'key_worker', 'senior_staff'].includes(req.user.role)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

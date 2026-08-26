@@ -249,7 +249,7 @@ router.get('/:id', async (req, res) => {
 
 // Create new timetable (draft)
 router.post('/', [
-  requireRole(['admin', 'home_manager']),
+  requireRole(['admin']),
   body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Name is required and must be less than 100 characters'),
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be less than 500 characters'),
   body('home_ids').isArray({ min: 1 }).withMessage('At least one home must be selected'),
@@ -320,7 +320,7 @@ router.post('/', [
 
 // Generate timetable from existing rotas
 router.post('/:id/generate', [
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
     const timetable = await Timetable.findById(req.params.id);
@@ -387,7 +387,7 @@ router.get('/:id/status', async (req, res) => {
 
 // Update timetable (only draft status)
 router.put('/:id', [
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
     const timetable = await Timetable.findById(req.params.id);
@@ -430,7 +430,7 @@ router.put('/:id', [
 
 // Publish timetable
 router.post('/:id/publish', [
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
     const timetable = await Timetable.findById(req.params.id);
@@ -464,7 +464,7 @@ router.post('/:id/publish', [
 
 // Archive timetable
 router.post('/:id/archive', [
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
     const timetable = await Timetable.findById(req.params.id);
@@ -490,7 +490,7 @@ router.post('/:id/archive', [
 
 // Delete timetable (draft, generated, published, or archived — not while generating)
 router.delete('/:id', [
-  requireRole(['admin', 'home_manager'])
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
     const timetable = await Timetable.findById(req.params.id);
