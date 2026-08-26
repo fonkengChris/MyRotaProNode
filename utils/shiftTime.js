@@ -14,6 +14,9 @@ const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Europe/London';
 const EARLY_CLOCK_IN_MINUTES = 15;
 // A clock-out this many minutes past scheduled end makes the shift overtime-eligible.
 const OVERTIME_ELIGIBLE_MINUTES = 30;
+// Clocking in this many minutes (or more) after scheduled start deducts the late
+// time from worked/paid hours. Lateness below this is forgiven (grace).
+const LATE_ARRIVAL_MINUTES = 30;
 
 function shiftStartDate(shift) {
   return moment.tz(`${shift.date} ${shift.start_time}`, 'YYYY-MM-DD HH:mm', APP_TIMEZONE).toDate();
@@ -33,6 +36,7 @@ module.exports = {
   APP_TIMEZONE,
   EARLY_CLOCK_IN_MINUTES,
   OVERTIME_ELIGIBLE_MINUTES,
+  LATE_ARRIVAL_MINUTES,
   shiftStartDate,
   shiftEndDate,
 };

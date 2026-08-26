@@ -108,8 +108,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Approve an overtime request (manager/admin only).
-router.post('/:id/approve', requireRole(['admin', 'home_manager']), async (req, res) => {
+// Approve an overtime request (admin only).
+router.post('/:id/approve', requireRole(['admin']), async (req, res) => {
   try {
     const overtime = await OvertimeRequest.findById(req.params.id);
     if (!overtime) {
@@ -127,8 +127,8 @@ router.post('/:id/approve', requireRole(['admin', 'home_manager']), async (req, 
   }
 });
 
-// Deny an overtime request (manager/admin only).
-router.post('/:id/deny', requireRole(['admin', 'home_manager']), async (req, res) => {
+// Deny an overtime request (admin only — overtime decisions are admin-controlled).
+router.post('/:id/deny', requireRole(['admin']), async (req, res) => {
   try {
     const overtime = await OvertimeRequest.findById(req.params.id);
     if (!overtime) {

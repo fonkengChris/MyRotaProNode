@@ -47,7 +47,9 @@ function createPayrollPdf({
   generatedBy,
   hourlyRate,
   sleepNightFlatPay,
+  mode = 'final',
 }) {
+  const isDraft = mode === 'draft';
   const doc = new PDFDocument({
     margin: 36,
     size: 'A4',
@@ -61,8 +63,12 @@ function createPayrollPdf({
   const colWidths = [120, 72, 58, 58, 72, 72, 62];
   const headers = ['Name', 'Role', 'Day Hrs', 'Night Hrs', 'Sleep-in Pay', 'Leave Pay', 'Gross'];
 
+  const title = isDraft
+    ? 'Payroll Report — DRAFT (estimated from rostered hours)'
+    : 'Payroll Report — FINAL (clock-validated)';
+
   let y = margin;
-  doc.font('Helvetica-Bold').fontSize(18).fillColor('#111111').text('Payroll Report', margin, y);
+  doc.font('Helvetica-Bold').fontSize(18).fillColor('#111111').text(title, margin, y);
   y = doc.y + 6;
 
   doc.font('Helvetica').fontSize(10).fillColor('#374151');
@@ -79,7 +85,23 @@ function createPayrollPdf({
     y = doc.y + 2;
   }
   doc.text(`Leave pay: 7.5 paid hours per approved leave day`, margin, y);
-  y = doc.y + 14;
+  y = doc.y + 2;
+
+  if (!isDraft) {
+    const reviewCount = records.filter((r) => Number(r.needs_review || 0) > 0).length;
+    if (reviewCount > 0) {
+      doc
+        .fillColor('#b45309')
+        .text(
+          `Review needed: ${reviewCount} staff member(s) have shift(s) paid on rostered time (no clock-out recorded).`,
+          margin,
+          y
+        );
+      doc.fillColor('#374151');
+      y = doc.y + 2;
+    }
+  }
+  y = doc.y + 12;
 
   drawTableHeader(doc, tableStartX, y, colWidths, headers);
   y += 24;
@@ -107,8 +129,8 @@ function createPayrollPdf({
     drawRow(doc, tableStartX, y, colWidths, [
       record.name || 'Unknown',
       record.role || '-',
-      Number(record.day_hours || 0).toFixed(2),
-      Number(record.night_hours || 0).toFixed(2),
+      Number(record.day_hours || 0).toFixed(1),
+      Number(record.night_hours || 0).toFixed(1),
       formatMoney(record.sleep_in_pay || 0),
       formatMoney(record.leave_pay || 0),
       formatMoney(record.gross_pay || 0),
@@ -127,8 +149,8 @@ function createPayrollPdf({
   doc.font('Helvetica-Bold').fontSize(11).fillColor('#111111').text('Totals', margin, y);
   y = doc.y + 6;
   doc.font('Helvetica').fontSize(10);
-  doc.text(`Total day hours (paid): ${totalDay.toFixed(2)}`, margin, y);
-  doc.text(`Total night hours (paid): ${totalNight.toFixed(2)}`, margin, doc.y + 2);
+  doc.text(`Total day hours (paid): ${totalDay.toFixed(1)}`, margin, y);
+  doc.text(`Total night hours (paid): ${totalNight.toFixed(1)}`, margin, doc.y + 2);
   doc.text(`Total sleep-in pay: ${formatMoney(totalSleepInPay)}`, margin, doc.y + 2);
   doc.text(`Total leave pay: ${formatMoney(totalLeavePay)}`, margin, doc.y + 2);
   doc.text(`Total gross pay: ${formatMoney(totalGross)}`, margin, doc.y + 2);

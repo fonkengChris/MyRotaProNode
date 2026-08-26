@@ -7,7 +7,7 @@ const User = require('../models/User');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const OvertimeRequest = require('../models/OvertimeRequest');
 const { requireRole } = require('../middleware/auth');
-const { getShiftHourBreakdown, actualDurationHours } = require('../utils/shiftHours');
+const { getShiftHourBreakdown, clampedWorkedDurationHours } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
 const DEFAULT_HOURLY_RATE_GBP = 12.71;
@@ -177,7 +177,13 @@ async function buildPayrollRecords({
   currentUser,
   hourlyRate,
   sleepNightFlatPay,
+  mode = 'final',
 }) {
+  // Draft = estimate from rostered hours + approved leave (ignores clock data and
+  // overtime). Final = payable hours from clock-validated shifts + approved
+  // overtime, falling back to rostered time (flagged for review) when a shift was
+  // never clocked out.
+  const isDraft = mode === 'draft';
   const isAdmin = currentUser.role === 'admin';
   const userHomeIds = getUserHomeIds(currentUser);
 
@@ -228,8 +234,11 @@ async function buildPayrollRecords({
   const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', 'name role');
 
   // Approved overtime minutes, keyed by `${shiftId}:${userId}`, added on top of the
-  // rostered-clamped hours (see attendance reconciliation below).
-  const approvedOvertime = await OvertimeRequest.getApprovedMinutesMap(shifts.map((s) => s._id));
+  // rostered-clamped hours (see attendance reconciliation below). Draft is a rostered
+  // estimate, so overtime (which hasn't been worked/approved yet) is not fetched.
+  const approvedOvertime = isDraft
+    ? new Map()
+    : await OvertimeRequest.getApprovedMinutesMap(shifts.map((s) => s._id));
 
   const byUser = new Map();
   for (const shift of shifts) {
@@ -244,20 +253,29 @@ async function buildPayrollRecords({
       const uid = String(staff._id);
       if (scopedUsers && !scopedUsers.has(uid)) continue;
 
-      // Paid hours are based on ACTUAL clocked time, clamped so early clock-in / late
-      // clock-out never inflates pay. Missing/incomplete clock data falls back to
-      // rostered hours and flags the row for manager review.
-      const actual = actualDurationHours(assignment);
+      // Draft always pays rostered hours (an estimate). Final only counts a shift
+      // once the staff member has clocked IN: a shift never clocked into is not paid
+      // at all. Once clocked in, pay is based on ACTUAL clocked time, clamped to the
+      // scheduled window: early clock-in / late clock-out never inflate pay, and
+      // arriving 30+ min late deducts the late time. A missing clock-OUT falls back
+      // to rostered hours and flags the row for manager review.
       let br = rosteredBr;
       let needsReview = false;
-      if (actual != null) {
-        const clampedDuration = Math.min(actual, rosteredBr.duration_hours);
-        br = getShiftHourBreakdown(shift, clampedDuration);
-      } else {
-        needsReview = true;
+      if (!isDraft) {
+        if (!assignment.clock_in_time) {
+          // Not clocked in — excluded from final payroll entirely.
+          continue;
+        }
+        const worked = clampedWorkedDurationHours(shift, assignment);
+        if (worked != null) {
+          br = getShiftHourBreakdown(shift, worked);
+        } else {
+          needsReview = true;
+        }
       }
 
-      // Approved overtime (extra minutes past scheduled end) is added on top.
+      // Approved overtime (extra minutes past scheduled end) is added on top. Empty
+      // in draft mode.
       const overtimeMinutes = approvedOvertime.get(`${shift._id.toString()}:${uid}`) || 0;
       const overtimeHours = overtimeMinutes / 60;
 
@@ -360,6 +378,7 @@ async function buildPayrollRecords({
       acc.total_sleep_in_pay += row.sleep_in_pay || 0;
       acc.total_leave_pay += row.leave_pay || 0;
       acc.total_gross_pay += row.gross_pay || 0;
+      acc.total_needs_review += row.needs_review || 0;
       return acc;
     },
     {
@@ -369,6 +388,7 @@ async function buildPayrollRecords({
       total_sleep_in_pay: 0,
       total_leave_pay: 0,
       total_gross_pay: 0,
+      total_needs_review: 0,
     }
   );
 
@@ -381,6 +401,7 @@ async function buildPayrollRecords({
       total_sleep_in_pay: Number(totals.total_sleep_in_pay.toFixed(2)),
       total_leave_pay: Number(totals.total_leave_pay.toFixed(2)),
       total_gross_pay: Number(totals.total_gross_pay.toFixed(2)),
+      total_needs_review: totals.total_needs_review,
     },
   };
 }
@@ -393,6 +414,7 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
+    const mode = req.query.mode === 'draft' ? 'draft' : 'final';
     const { hourlyRate, sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
@@ -402,11 +424,13 @@ router.get('/', requireRole(['admin', 'home_manager']), async (req, res) => {
       currentUser: req.user,
       hourlyRate,
       sleepNightFlatPay,
+      mode,
     });
 
     res.json({
       start_date: startDate,
       end_date: endDate,
+      mode,
       records: data.records,
       totals: data.totals,
     });
@@ -425,6 +449,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
 
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
+    const mode = req.query.mode === 'draft' ? 'draft' : 'final';
     const { hourlyRate, sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
@@ -434,6 +459,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
       currentUser: req.user,
       hourlyRate,
       sleepNightFlatPay,
+      mode,
     });
 
     let homeNamePart = 'all_homes';
@@ -444,7 +470,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
       }
     }
 
-    const filename = `payroll_${homeNamePart}_${startDate}_to_${endDate}.pdf`;
+    const filename = `payroll_${mode}_${homeNamePart}_${startDate}_to_${endDate}.pdf`;
     const doc = createPayrollPdf({
       records: data.records,
       startDate,
@@ -452,6 +478,7 @@ router.get('/pdf', requireRole(['admin', 'home_manager']), async (req, res) => {
       generatedBy: req.user?.name,
       hourlyRate,
       sleepNightFlatPay,
+      mode,
     });
 
     res.setHeader('Content-Type', 'application/pdf');

@@ -5,6 +5,8 @@
  *   (then break deductions apply to that paid portion in the app layer).
  */
 
+const { shiftStartDate, shiftEndDate, LATE_ARRIVAL_MINUTES } = require('./shiftTime');
+
 const NIGHT_SLEEP_IN_HOURS = 8;
 
 function durationFromTimes(startTime, endTime) {
@@ -29,6 +31,42 @@ function actualDurationHours(assignment) {
   const outMs = new Date(assignment.clock_out_time).getTime();
   if (Number.isNaN(inMs) || Number.isNaN(outMs) || outMs <= inMs) return null;
   return (outMs - inMs) / 3600000;
+}
+
+/**
+ * Worked hours clamped to the scheduled window, or null when we don't have a
+ * complete, valid clock-in/clock-out pair.
+ *
+ * Policy (kept in sync with the frontend `src/lib/shiftHours.ts`):
+ * - Early clock-in never counts — worked time starts no earlier than scheduled start.
+ * - Late clock-out never counts — worked time ends no later than scheduled end
+ *   (extra past-the-end time is only paid via a separately-approved overtime request).
+ * - Late arrival below LATE_ARRIVAL_MINUTES is forgiven; at or beyond that threshold
+ *   the full late time is deducted (worked time starts at the actual clock-in).
+ *
+ * @param {object} shift - full shift with date/start_time/end_time
+ * @param {object} assignment - { clock_in_time, clock_out_time }
+ * @returns {number|null}
+ */
+function clampedWorkedDurationHours(shift, assignment) {
+  if (!assignment || !assignment.clock_in_time || !assignment.clock_out_time) return null;
+  const inMs = new Date(assignment.clock_in_time).getTime();
+  const outMs = new Date(assignment.clock_out_time).getTime();
+  if (Number.isNaN(inMs) || Number.isNaN(outMs) || outMs <= inMs) return null;
+
+  const schedStart = shiftStartDate(shift).getTime();
+  const schedEnd = shiftEndDate(shift).getTime();
+
+  // Early clock-in ignored; late arrival forgiven under the grace threshold,
+  // otherwise the full late time is charged to the staff member.
+  let effectiveStart = schedStart;
+  const lateMinutes = (inMs - schedStart) / 60000;
+  if (lateMinutes >= LATE_ARRIVAL_MINUTES) effectiveStart = inMs;
+
+  // Late departure clamped to scheduled end (overtime handled by the caller).
+  const effectiveEnd = Math.min(outMs, schedEnd);
+
+  return Math.max(0, (effectiveEnd - effectiveStart) / 3600000);
 }
 
 /**
@@ -66,4 +104,5 @@ module.exports = {
   durationFromTimes,
   getShiftHourBreakdown,
   actualDurationHours,
+  clampedWorkedDurationHours,
 };
