@@ -7,11 +7,11 @@ const User = require('../models/User');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const OvertimeRequest = require('../models/OvertimeRequest');
 const { requireRole } = require('../middleware/auth');
-const { getShiftHourBreakdown, clampedWorkedDurationHours } = require('../utils/shiftHours');
+const { getShiftHourBreakdown, workedHourBreakdown } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
 const DEFAULT_HOURLY_RATE_GBP = 12.71;
-const SLEEP_NIGHT_FLAT_PAY_GBP = 50;
+const SLEEP_NIGHT_FLAT_PAY_GBP = 55;
 const LEAVE_PAID_HOURS_PER_DAY = 7.5;
 
 // Defense-in-depth upper bounds for admin-supplied pay-rate overrides.
@@ -266,9 +266,9 @@ async function buildPayrollRecords({
           // Not clocked in — excluded from final payroll entirely.
           continue;
         }
-        const worked = clampedWorkedDurationHours(shift, assignment);
-        if (worked != null) {
-          br = getShiftHourBreakdown(shift, worked);
+        const wb = workedHourBreakdown(shift, assignment);
+        if (wb != null) {
+          br = wb;
         } else {
           needsReview = true;
         }
