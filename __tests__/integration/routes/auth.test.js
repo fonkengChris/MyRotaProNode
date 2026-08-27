@@ -6,11 +6,11 @@ process.env.JWT_EXPIRES_IN = '7d';
 const request = require('supertest');
 const app = require('../../../server');
 const User = require('../../../models/User');
-const { createTestUser, createTestHome, getAuthHeader } = require('../../../tests/utils/testHelpers');
+const { createTestUser, getAuthHeader } = require('../../../tests/utils/testHelpers');
 
 describe('Auth Routes', () => {
-  describe('POST /api/auth/register', () => {
-    test('should register a new user successfully', async () => {
+  describe('POST /api/auth/register (removed)', () => {
+    test('public self-registration is no longer available', async () => {
       const userData = {
         name: 'John Doe',
         email: `john${Date.now()}@example.com`,
@@ -20,73 +20,11 @@ describe('Auth Routes', () => {
         type: 'fulltime'
       };
 
-      const response = await request(app)
+      // The route was removed; new users are created by an admin via POST /api/users.
+      await request(app)
         .post('/api/auth/register')
         .send(userData)
-        .expect(201);
-
-      expect(response.body).toHaveProperty('message');
-      expect(response.body).toHaveProperty('user');
-      expect(response.body).toHaveProperty('token');
-      expect(response.body).toHaveProperty('permissions');
-      expect(response.body.user.email).toBe(userData.email.toLowerCase());
-      expect(response.body.user.password).toBeUndefined();
-    });
-
-    test('should fail with validation errors', async () => {
-      const userData = {
-        name: 'A', // Too short
-        email: 'invalid-email',
-        password: 'short' // Too short
-      };
-
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send(userData)
-        .expect(400);
-
-      expect(response.body).toHaveProperty('error');
-      expect(response.body).toHaveProperty('details');
-    });
-
-    test('should fail if user already exists', async () => {
-      const user = await createTestUser();
-
-      const userData = {
-        name: 'Another User',
-        email: user.email,
-        phone: '+1234567890',
-        password: 'Password123',
-        role: 'support_worker'
-      };
-
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send(userData)
-        .expect(400);
-
-      expect(response.body.error).toContain('already exists');
-    });
-
-    test('should add home_id to homes array for non-admin users', async () => {
-      const home = await createTestHome();
-
-      const userData = {
-        name: 'John Doe',
-        email: `john${Date.now()}@example.com`,
-        phone: '+1234567890',
-        password: 'Password123',
-        role: 'support_worker',
-        home_id: home._id.toString()
-      };
-
-      const response = await request(app)
-        .post('/api/auth/register')
-        .send(userData)
-        .expect(201);
-
-      expect(response.body.user.homes).toHaveLength(1);
-      expect(response.body.user.homes[0].home_id.toString()).toBe(home._id.toString());
+        .expect(404);
     });
   });
 

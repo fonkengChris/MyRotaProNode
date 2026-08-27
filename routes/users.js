@@ -39,6 +39,57 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Create a new user (admin only). Self-registration was removed, so this is the
+// only way to add users to the system.
+router.post('/', requireRole(['admin']), async (req, res) => {
+  try {
+    const { name, email, phone, password, role, type, home_id, homes } = req.body;
+
+    if (!name || !email || !phone || !password || !role) {
+      return res.status(400).json({ error: 'Name, email, phone, password and role are required' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (!['admin', 'key_worker', 'senior_staff', 'support_worker'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    const userData = {
+      name,
+      email,
+      phone,
+      password,
+      role,
+      type: type || 'fulltime'
+    };
+
+    // Attach a home if provided (non-admin users). Accept either `home_id` or a
+    // `homes` array from the client.
+    const primaryHomeId = home_id
+      || (Array.isArray(homes) && homes[0] && (typeof homes[0].home_id === 'string' ? homes[0].home_id : homes[0].home_id?.id));
+    if (role !== 'admin' && primaryHomeId) {
+      userData.homes = [{ home_id: primaryHomeId, is_default: true }];
+      userData.default_home_id = primaryHomeId;
+    }
+
+    const user = new User(userData);
+    await user.save();
+
+    // publicInfo strips the password before returning.
+    res.status(201).json(user.publicInfo);
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ error: 'Server error while creating user' });
+  }
+});
+
 // Get user by ID (self, admin, or someone who shares a home)
 router.get('/:id', async (req, res) => {
   try {
