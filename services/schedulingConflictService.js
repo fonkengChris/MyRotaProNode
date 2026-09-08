@@ -2,7 +2,20 @@ const TimeOffRequest = require('../models/TimeOffRequest');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
 const ConstraintWeights = require('../models/ConstraintWeights');
-const { getShiftHourBreakdown } = require('../utils/shiftHours');
+const { getShiftHourBreakdown, restHoursBetween } = require('../utils/shiftHours');
+
+// Minimum rest gap (hours) required between two of a staff member's shifts. Below this an
+// admin may override, and a support worker self-selecting is assigned but flagged for review.
+const MIN_REST_HOURS = 8;
+
+// Conflict types an admin may override at assignment time. `overlapping_shift` is deliberately
+// excluded — same-time double-booking is always blocked.
+const OVERRIDABLE_CONFLICT_TYPES = new Set([
+  'time_off',
+  'max_hours_exceeded',
+  'fulltime_weekly_cap_exceeded',
+  'insufficient_rest',
+]);
 
 class SchedulingConflictService {
   /** Match Shift model / schema virtual for duration (handles overnight). */
@@ -67,8 +80,27 @@ class SchedulingConflictService {
     }
   }
 
+  /** The calendar dates one day either side of `dateStr` (YYYY-MM-DD), plus the day itself. */
+  static _restWindowDates(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const fmt = (dt) => {
+      const yy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yy}-${mm}-${dd}`;
+    };
+    const prev = new Date(y, m - 1, d - 1);
+    const next = new Date(y, m - 1, d + 1);
+    return [fmt(prev), dateStr, fmt(next)];
+  }
+
   /**
-   * Check if a shift assignment would create a conflict
+   * Check if a shift assignment would create a conflict.
+   *
+   * Returns `overridable` on the primary conflict and an `overridableConflicts` list of every
+   * rule an admin could waive. `overlapping_shift` (same-time double-booking) is never
+   * overridable and is always reported first, even when `options.override` is set.
+   *
    * @param {string} userId - The user ID to check
    * @param {string} shiftDate - Shift date in YYYY-MM-DD format
    * @param {string} shiftStartTime - Shift start time in HH:MM format
@@ -76,35 +108,21 @@ class SchedulingConflictService {
    * @param {object} [options]
    * @param {string} [options.requesterRole] - Role of user making the assignment (required to exceed full-time weekly cap)
    * @param {string} [options.shiftType] - shift_type of the shift being assigned (for paid-hours / sleep-in rules)
+   * @param {boolean} [options.override] - When true, suppress overridable conflicts (only overlap can still block)
    * @returns {Promise<Object>} Conflict information
    */
   static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime, options = {}) {
     const requesterRole = options.requesterRole;
     const shiftType = options.shiftType;
+    const override = !!options.override;
     try {
-      // Check for time-off conflicts on the same date
-      const timeOffConflicts = await this.checkTimeOffConflicts(userId, shiftDate, shiftDate);
-      
-      if (timeOffConflicts.length > 0) {
-        return {
-          hasConflict: true,
-          conflictType: 'time_off',
-          conflicts: timeOffConflicts,
-          message: `User has approved time off on ${shiftDate}`
-        };
-      }
-
-      // Check for overlapping shifts on the same date
+      // Same-time double-booking is a hard block for everyone and takes precedence over
+      // everything else, so it is evaluated first and returned regardless of `override`.
       const overlappingShifts = await Shift.find({
         date: shiftDate,
         'assigned_staff.user_id': userId,
-        $or: [
-          // New shift overlaps with existing shift
-          {
-            start_time: { $lt: shiftEndTime },
-            end_time: { $gt: shiftStartTime }
-          }
-        ]
+        start_time: { $lt: shiftEndTime },
+        end_time: { $gt: shiftStartTime }
       });
 
       if (overlappingShifts.length > 0) {
@@ -112,39 +130,66 @@ class SchedulingConflictService {
           hasConflict: true,
           conflictType: 'overlapping_shift',
           conflicts: overlappingShifts,
-          message: `User already has overlapping shifts on ${shiftDate}`
+          message: `User already has overlapping shifts on ${shiftDate}`,
+          overridable: false,
+          overridableConflicts: []
         };
       }
 
-      // Check for maximum hours per day/week violations
+      // Collect every overridable violation so the caller can list them in one dialog.
+      const overridableConflicts = [];
+
+      // Approved time off on the shift date.
+      const timeOffConflicts = await this.checkTimeOffConflicts(userId, shiftDate, shiftDate);
+      if (timeOffConflicts.length > 0) {
+        overridableConflicts.push({
+          conflictType: 'time_off',
+          conflicts: timeOffConflicts,
+          message: `User has approved time off on ${shiftDate}`
+        });
+      }
+
+      // More than 24 hours rostered on the same day.
       const dailyShifts = await Shift.find({
         date: shiftDate,
         'assigned_staff.user_id': userId
       });
-
-      const totalDailyHours = dailyShifts.reduce((total, shift) => {
-        const start = new Date(`2000-01-01T${shift.start_time}`);
-        const end = new Date(`2000-01-01T${shift.end_time}`);
-        const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-        return total + hours;
-      }, 0);
-
-      // Add the new shift hours
-      const newShiftStart = new Date(`2000-01-01T${shiftStartTime}`);
-      const newShiftEnd = new Date(`2000-01-01T${shiftEndTime}`);
-      const newShiftHours = (newShiftEnd.getTime() - newShiftStart.getTime()) / (1000 * 60 * 60);
-      const totalHours = totalDailyHours + newShiftHours;
-
+      const totalDailyHours = dailyShifts.reduce(
+        (total, shift) => total + this._shiftDurationHours(shift.start_time, shift.end_time),
+        0
+      );
+      const totalHours = totalDailyHours + this._shiftDurationHours(shiftStartTime, shiftEndTime);
       if (totalHours > 24) {
-        return {
-          hasConflict: true,
+        overridableConflicts.push({
           conflictType: 'max_hours_exceeded',
           conflicts: [],
           message: `Total daily hours (${totalHours.toFixed(1)}) would exceed 24 hours`
-        };
+        });
       }
 
-      // Full-time staff: weekly cap (default 48h); exceeding requires admin or key_worker
+      // Fewer than MIN_REST_HOURS between this shift and an adjacent-day shift.
+      const candidate = { date: shiftDate, start_time: shiftStartTime, end_time: shiftEndTime };
+      const nearbyShifts = await Shift.find({
+        date: { $in: this._restWindowDates(shiftDate) },
+        'assigned_staff.user_id': userId
+      }).select('date start_time end_time');
+      let minRest = Infinity;
+      for (const s of nearbyShifts) {
+        const rest = restHoursBetween(s, candidate);
+        if (rest === null) continue;
+        // Ignore overlaps (rest <= 0): those are handled by the overlap check above.
+        if (rest > 0 && rest < minRest) minRest = rest;
+      }
+      if (minRest < MIN_REST_HOURS) {
+        overridableConflicts.push({
+          conflictType: 'insufficient_rest',
+          conflicts: [],
+          message: `Only ${minRest.toFixed(1)}h rest before/after an adjacent shift (minimum ${MIN_REST_HOURS}h)`,
+          details: { rest_hours: Math.round(minRest * 10) / 10, min_rest_hours: MIN_REST_HOURS }
+        });
+      }
+
+      // Full-time staff weekly cap (default 48h); exceeding requires admin or key_worker.
       const staff = await User.findById(userId).select('type').lean();
       if (staff && staff.type === 'fulltime') {
         const policy = await ConstraintWeights.getFulltimeWeeklyHoursPolicy();
@@ -165,8 +210,7 @@ class SchedulingConflictService {
         }).paid_work_hours;
 
         if (!ConstraintWeights.canAuthorizeFulltimeOverWeeklyCap(requesterRole, weeklyHours, policy)) {
-          return {
-            hasConflict: true,
+          overridableConflicts.push({
             conflictType: 'fulltime_weekly_cap_exceeded',
             conflicts: [],
             message: `Full-time weekly hours would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may assign above this limit`,
@@ -176,15 +220,35 @@ class SchedulingConflictService {
               week_start: week.start,
               week_end: week.end
             }
-          };
+          });
         }
       }
 
+      // With override, overridable violations are waived; only overlap (handled above) blocks.
+      if (override || overridableConflicts.length === 0) {
+        return {
+          hasConflict: false,
+          conflictType: null,
+          conflicts: [],
+          message: 'No conflicts detected',
+          overridable: false,
+          overridableConflicts: []
+        };
+      }
+
+      const primary = overridableConflicts[0];
       return {
-        hasConflict: false,
-        conflictType: null,
-        conflicts: [],
-        message: 'No conflicts detected'
+        hasConflict: true,
+        conflictType: primary.conflictType,
+        conflicts: primary.conflicts,
+        message: primary.message,
+        details: primary.details,
+        overridable: true,
+        overridableConflicts: overridableConflicts.map(({ conflictType, message, details }) => ({
+          conflictType,
+          message,
+          details
+        }))
       };
     } catch (error) {
       console.error('Error checking shift assignment conflict:', error);
@@ -260,5 +324,8 @@ class SchedulingConflictService {
     }
   }
 }
+
+SchedulingConflictService.MIN_REST_HOURS = MIN_REST_HOURS;
+SchedulingConflictService.OVERRIDABLE_CONFLICT_TYPES = OVERRIDABLE_CONFLICT_TYPES;
 
 module.exports = SchedulingConflictService;

@@ -37,11 +37,12 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // Create new home
 router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
-    // Ensure manager_id is provided for normal home creation
+    // manager_id is optional. When omitted/blank, don't persist an empty string
+    // (it would fail ObjectId casting), so strip it out.
     if (!req.body.manager_id) {
-      return res.status(400).json({ error: 'Manager is required for home creation' });
+      delete req.body.manager_id;
     }
-    
+
     const home = new Home(req.body);
     await home.save();
     
@@ -58,6 +59,12 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 // Update home
 router.put('/:id', authenticateToken, requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
+    // A blank manager_id means "no manager"; store null rather than "" so the
+    // ObjectId cast doesn't fail.
+    if (req.body.manager_id === '') {
+      req.body.manager_id = null;
+    }
+
     const home = await Home.findByIdAndUpdate(
       req.params.id,
       req.body,

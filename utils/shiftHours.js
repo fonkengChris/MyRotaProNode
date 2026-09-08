@@ -145,6 +145,34 @@ function workedHourBreakdown(shift, assignment) {
 }
 
 /**
+ * Rest gap in hours between two shifts, each `{ date: 'YYYY-MM-DD', start_time, end_time }`.
+ * Builds absolute start/end instants (an overnight end rolls to the next day), orders the two
+ * shifts by start, and returns `(laterStart - earlierEnd)` in hours. A negative result means
+ * the shifts overlap. Returns null if either shift is missing its date or times.
+ *
+ * Shared by the scheduling-conflict service (interactive assignment) and mirrors the client
+ * copy in `src/components/ShiftSelectionModal.tsx`.
+ */
+function restHoursBetween(shiftA, shiftB) {
+  const toInstants = (s) => {
+    if (!s || !s.date || !s.start_time || !s.end_time) return null;
+    const [y, m, d] = s.date.split('-').map(Number);
+    const [sh, sm] = s.start_time.split(':').map(Number);
+    const [eh, em] = s.end_time.split(':').map(Number);
+    if ([y, m, d, sh, sm, eh, em].some(Number.isNaN)) return null;
+    const start = new Date(y, m - 1, d, sh, sm, 0, 0);
+    const end = new Date(y, m - 1, d, eh, em, 0, 0);
+    if (end.getTime() <= start.getTime()) end.setDate(end.getDate() + 1);
+    return { start: start.getTime(), end: end.getTime() };
+  };
+  const a = toInstants(shiftA);
+  const b = toInstants(shiftB);
+  if (!a || !b) return null;
+  const [earlier, later] = a.start <= b.start ? [a, b] : [b, a];
+  return (later.start - earlier.end) / 3600000;
+}
+
+/**
  * @param {object} shift - { shift_type, start_time, end_time, duration_hours? }
  * @param {number} [overrideDurationHours] - when provided, replaces the rostered duration
  *   (e.g. actual clocked hours) before sleep-in/break rules are applied.
@@ -196,6 +224,7 @@ module.exports = {
   NIGHT_SLEEP_END_MIN,
   durationFromTimes,
   sleepWindowOverlapHours,
+  restHoursBetween,
   getShiftHourBreakdown,
   actualDurationHours,
   clampedWorkedDurationHours,

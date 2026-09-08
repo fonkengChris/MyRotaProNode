@@ -231,6 +231,45 @@ router.get(
   }
 );
 
+// List rest-exception assignments for admin review (flattened to one row per flagged staff
+// member). Defaults to pending. Registered before `/:id` so the literal path is matched first.
+router.get('/rest-exceptions', requireRole(['admin', 'key_worker']), async (req, res) => {
+  try {
+    const status = req.query.status || 'pending';
+    const filter = { 'assigned_staff.rest_exception_status': status };
+    if (req.query.home_id) filter.home_id = req.query.home_id;
+
+    const shifts = await Shift.find(filter)
+      .populate('assigned_staff.user_id', 'name email role')
+      .populate('service_id', 'name')
+      .sort({ date: 1, start_time: 1 });
+
+    const rows = [];
+    for (const shift of shifts) {
+      for (const a of shift.assigned_staff) {
+        if (a.rest_exception_status !== status) continue;
+        rows.push({
+          shift_id: shift._id,
+          user: a.user_id,
+          date: shift.date,
+          start_time: shift.start_time,
+          end_time: shift.end_time,
+          shift_type: shift.shift_type,
+          home_id: shift.home_id,
+          service: shift.service_id,
+          rest_exception_status: a.rest_exception_status,
+          assigned_at: a.assigned_at
+        });
+      }
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error listing rest exceptions:', error);
+    res.status(500).json({ error: 'Failed to fetch rest exceptions' });
+  }
+});
+
 // Get shift by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -466,20 +505,24 @@ router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), asyn
 // Assign staff to shift
 router.post('/:id/assign', async (req, res) => {
   try {
-    const { user_id, note } = req.body;
+    const { user_id, note, override } = req.body;
     const shift = await Shift.findById(req.params.id);
-    
+
     // Check permissions: admins/managers/senior staff can assign anyone, support workers can only assign themselves
     const currentUser = req.user; // This should be set by the authenticateToken middleware
     const allowedRoles = ['admin', 'key_worker', 'senior_staff'];
-    
-    if (!allowedRoles.includes(currentUser.role) && currentUser._id.toString() !== user_id) {
-      return res.status(403).json({ 
+    const isSelfAssign = currentUser._id.toString() === String(user_id);
+    // Only admins may override rules (time-off / >24h day / rest / weekly cap). Overlap is
+    // never overridable. key_worker can still exceed the weekly cap via requesterRole.
+    const canOverride = currentUser.role === 'admin';
+
+    if (!allowedRoles.includes(currentUser.role) && !isSelfAssign) {
+      return res.status(403).json({
         error: 'Insufficient permissions. You can only assign yourself to shifts.',
         message: 'Support workers can only select shifts for themselves'
       });
     }
-    
+
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
@@ -491,61 +534,83 @@ router.post('/:id/assign', async (req, res) => {
       shift.date,
       shift.start_time,
       shift.end_time,
-      { requesterRole: currentUser.role, shiftType: shift.shift_type }
+      { requesterRole: currentUser.role, shiftType: shift.shift_type, override: !!override && canOverride }
     );
 
+    // Support worker self-selecting a shift that breaks ONLY the <8h rest rule is assigned
+    // now and flagged for admin review, rather than blocked.
+    let restExceptionPending = false;
+
     if (conflictCheck.hasConflict) {
-      let userFriendlyMessage = '';
-      
-      switch (conflictCheck.conflictType) {
-        case 'time_off':
-          userFriendlyMessage = `Cannot assign staff member to shift on ${conflictCheck.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
-          break;
-        case 'overlapping_shift':
-          userFriendlyMessage = `Cannot assign staff member - they already have overlapping shifts on ${conflictCheck.conflicts[0]?.date || 'this date'}`;
-          break;
-        case 'max_hours_exceeded':
-          userFriendlyMessage = `Cannot assign staff member - this would exceed maximum daily hours (${conflictCheck.message})`;
-          break;
-        case 'fulltime_weekly_cap_exceeded':
-          userFriendlyMessage = conflictCheck.message;
-          break;
-        default:
-          userFriendlyMessage = conflictCheck.message;
+      const friendlyFor = (check) => {
+        switch (check.conflictType) {
+          case 'time_off':
+            return `Cannot assign staff member to shift on ${check.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
+          case 'overlapping_shift':
+            return `Cannot assign staff member - they already have overlapping shifts on ${check.conflicts[0]?.date || 'this date'}`;
+          case 'max_hours_exceeded':
+            return `Cannot assign staff member - this would exceed maximum daily hours (${check.message})`;
+          default:
+            return check.message;
+        }
+      };
+
+      // Same-time double-booking is a hard block for everyone (never overridable).
+      if (conflictCheck.conflictType === 'overlapping_shift') {
+        const msg = friendlyFor(conflictCheck);
+        return res.status(409).json({
+          error: 'Scheduling conflict detected',
+          conflict: conflictCheck,
+          overridable: false,
+          message: msg,
+          userFriendlyMessage: msg
+        });
       }
-      
-      return res.status(409).json({
-        error: 'Scheduling conflict detected',
-        conflict: conflictCheck,
-        message: userFriendlyMessage,
-        userFriendlyMessage: userFriendlyMessage
-      });
+
+      const conflictTypes = (conflictCheck.overridableConflicts || []).map((c) => c.conflictType);
+      const restOnly = conflictTypes.length > 0 && conflictTypes.every((t) => t === 'insufficient_rest');
+
+      if (isSelfAssign && !canOverride && restOnly) {
+        restExceptionPending = true;
+      } else {
+        const msg = friendlyFor(conflictCheck);
+        return res.status(409).json({
+          error: 'Scheduling conflict detected',
+          conflict: conflictCheck,
+          overridable: !!conflictCheck.overridable && canOverride,
+          overridableConflicts: conflictCheck.overridableConflicts || [],
+          message: msg,
+          userFriendlyMessage: msg
+        });
+      }
     }
-    
+
     // Check if shift is already fully staffed
     if (shift.assigned_staff.length >= shift.required_staff_count) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Shift is already fully staffed',
         message: `This shift requires ${shift.required_staff_count} staff members and already has ${shift.assigned_staff.length} assigned`
       });
     }
 
     // Check if staff member is already assigned to this shift
-    const isAlreadyAssigned = shift.assigned_staff.some(assignment => 
+    const isAlreadyAssigned = shift.assigned_staff.some(assignment =>
       assignment.user_id.toString() === user_id
     );
-    
+
     if (isAlreadyAssigned) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Staff member already assigned',
         message: 'This staff member is already assigned to this shift'
       });
     }
 
-    shift.assignStaff(user_id, note);
+    shift.assignStaff(user_id, note, restExceptionPending ? { rest_exception_status: 'pending' } : {});
     await shift.save();
-    
-    res.json(shift);
+
+    const payload = shift.toObject({ virtuals: true });
+    payload.rest_exception_pending = restExceptionPending;
+    res.json(payload);
   } catch (error) {
     console.error('Error assigning staff to shift:', error);
     
@@ -565,6 +630,47 @@ router.post('/:id/assign', async (req, res) => {
         message: 'An unexpected error occurred while assigning staff'
       });
     }
+  }
+});
+
+// Confirm a pending rest-exception: the admin accepts the reduced rest gap and clears the flag.
+router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_worker']), async (req, res) => {
+  try {
+    const shift = await Shift.findById(req.params.id);
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found' });
+    }
+    const assignment = shift.assigned_staff.find(
+      (a) => a.user_id.toString() === String(req.params.userId)
+    );
+    if (!assignment) {
+      return res.status(404).json({ error: 'Staff member is not assigned to this shift' });
+    }
+    assignment.rest_exception_status = 'confirmed';
+    await shift.save();
+    res.json(shift);
+  } catch (error) {
+    console.error('Error confirming rest exception:', error);
+    res.status(500).json({ error: 'Failed to confirm rest exception' });
+  }
+});
+
+// Remove a rest-exception assignment: the admin rejects it and un-assigns the staff member.
+router.post('/:id/rest-exception/:userId/remove', requireRole(['admin', 'key_worker']), async (req, res) => {
+  try {
+    const shift = await Shift.findById(req.params.id);
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found' });
+    }
+    shift.removeStaff(req.params.userId);
+    await shift.save();
+    res.json(shift);
+  } catch (error) {
+    if (error.message && error.message.includes('not assigned')) {
+      return res.status(404).json({ error: error.message });
+    }
+    console.error('Error removing rest exception:', error);
+    res.status(500).json({ error: 'Failed to remove rest exception' });
   }
 });
 

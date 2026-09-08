@@ -68,6 +68,14 @@ const shiftSchema = new mongoose.Schema({
       default: Date.now
     },
     note: String,
+    // Rest-exception review: set to 'pending' when a support worker self-selects a shift
+    // that breaks only the <8h rest rule (assign-now, flag-for-review). An admin then
+    // 'confirmed's it or removes the assignment. 'none' for normal assignments.
+    rest_exception_status: {
+      type: String,
+      enum: ['none', 'pending', 'confirmed'],
+      default: 'none'
+    },
     // Attendance tracking (clock-in / clock-out)
     clock_in_time: {
       type: Date,
@@ -121,6 +129,8 @@ shiftSchema.index({ home_id: 1 });
 shiftSchema.index({ service_id: 1 });
 shiftSchema.index({ date: 1 });
 shiftSchema.index({ 'assigned_staff.user_id': 1 });
+// Supports the admin rest-exception review queue (pending/confirmed flagged assignments).
+shiftSchema.index({ 'assigned_staff.rest_exception_status': 1 });
 shiftSchema.index({ is_active: 1 });
 // Supports the attendance scheduler scan (today's shifts still awaiting clock-in).
 // Keyed on clock_in_time (null) so docs predating the attendance fields still match.
@@ -210,28 +220,29 @@ shiftSchema.methods.isStaffAvailable = function(staffId, availabilityData) {
 };
 
 // Method to assign staff member
-shiftSchema.methods.assignStaff = function(staffId, note = '') {
+shiftSchema.methods.assignStaff = function(staffId, note = '', opts = {}) {
   // Check if staff is already assigned
-  const existingAssignment = this.assigned_staff.find(assignment => 
+  const existingAssignment = this.assigned_staff.find(assignment =>
     assignment.user_id.toString() === staffId.toString()
   );
-  
+
   if (existingAssignment) {
     throw new Error('Staff member is already assigned to this shift');
   }
-  
+
   // Check if shift is fully staffed
   if (this.assigned_staff.length >= this.required_staff_count) {
     throw new Error('Shift is already fully staffed');
   }
-  
+
   this.assigned_staff.push({
     user_id: staffId,
     status: 'assigned',
     assigned_at: new Date(),
-    note
+    note,
+    rest_exception_status: opts.rest_exception_status || 'none'
   });
-  
+
   return this;
 };
 

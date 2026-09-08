@@ -36,12 +36,12 @@ const homeSchema = new mongoose.Schema({
   contact_info: {
     phone: {
       type: String,
-      required: [true, 'Contact phone is required'],
+      required: false,
       trim: true
     },
     email: {
       type: String,
-      required: [true, 'Contact email is required'],
+      required: false,
       lowercase: true,
       trim: true
     }
