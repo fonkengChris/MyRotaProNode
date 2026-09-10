@@ -55,10 +55,34 @@ function getUserHomeIds(user) {
     .map((id) => String(id));
 }
 
-function computeBreakDeduction(paidWorkHours) {
-  if (paidWorkHours >= 12) return 1;
-  if (paidWorkHours >= 8) return 0.5;
-  return 0;
+// Fallback break-deduction bands, used when a home has no configured policy (e.g.
+// documents created before break_policy existed). Mirrors the historical hard-coded rule.
+const DEFAULT_BREAK_TIERS = [
+  { min_hours: 8, deduction_hours: 0.5 },
+  { min_hours: 12, deduction_hours: 1 },
+];
+
+/**
+ * Hours of unpaid break to deduct from a shift's paid work hours, per the home's
+ * configurable break policy. The highest tier whose `min_hours` threshold is met by
+ * `paidWorkHours` wins. A policy with `enabled === false` deducts nothing.
+ */
+function computeBreakDeduction(paidWorkHours, breakPolicy) {
+  if (breakPolicy && breakPolicy.enabled === false) return 0;
+  const tiers =
+    breakPolicy && Array.isArray(breakPolicy.tiers) && breakPolicy.tiers.length
+      ? breakPolicy.tiers
+      : DEFAULT_BREAK_TIERS;
+
+  let deduction = 0;
+  let bestThreshold = -1;
+  for (const tier of tiers) {
+    if (paidWorkHours >= tier.min_hours && tier.min_hours > bestThreshold) {
+      bestThreshold = tier.min_hours;
+      deduction = tier.deduction_hours;
+    }
+  }
+  return deduction;
 }
 
 function normalizeBoundedNumber(value, fallback, max) {
@@ -233,6 +257,18 @@ async function buildPayrollRecords({
 
   const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', 'name role');
 
+  // Break deductions are configured per home, so resolve each home's policy once and
+  // key it by home id for use while walking the shifts below.
+  const shiftHomeIds = [
+    ...new Set(shifts.map((s) => s.home_id && String(s.home_id)).filter(Boolean)),
+  ];
+  const homesForShifts = shiftHomeIds.length
+    ? await Home.find({ _id: { $in: shiftHomeIds } }).select('break_policy')
+    : [];
+  const breakPolicyByHome = new Map(
+    homesForShifts.map((h) => [String(h._id), h.break_policy])
+  );
+
   // Approved overtime minutes, keyed by `${shiftId}:${userId}`, added on top of the
   // rostered-clamped hours (see attendance reconciliation below). Draft is a rostered
   // estimate, so overtime (which hasn't been worked/approved yet) is not fetched.
@@ -246,6 +282,7 @@ async function buildPayrollRecords({
     const rosteredBr = getShiftHourBreakdown(shift);
     const assignments = Array.isArray(shift.assigned_staff) ? shift.assigned_staff : [];
     const nightShift = isNightShift(shift.shift_type);
+    const breakPolicy = breakPolicyByHome.get(String(shift.home_id));
 
     for (const assignment of assignments) {
       const staff = assignment.user_id;
@@ -279,7 +316,7 @@ async function buildPayrollRecords({
       const overtimeMinutes = approvedOvertime.get(`${shift._id.toString()}:${uid}`) || 0;
       const overtimeHours = overtimeMinutes / 60;
 
-      const breakDeduction = computeBreakDeduction(br.paid_work_hours);
+      const breakDeduction = computeBreakDeduction(br.paid_work_hours, breakPolicy);
       const paidAfterBreak = Math.max(0, br.paid_work_hours - breakDeduction) + overtimeHours;
 
       if (!byUser.has(uid)) {

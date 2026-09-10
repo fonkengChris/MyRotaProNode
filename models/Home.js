@@ -64,6 +64,37 @@ const homeSchema = new mongoose.Schema({
       match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
     }
   },
+  // Per-home unpaid break deduction policy applied to payroll. `tiers` is a set of
+  // bands: for a shift's paid work hours, the highest tier whose `min_hours` is met
+  // determines the hours deducted. Defaults mirror the previous hard-coded rule
+  // (8h+ → 0.5h, 12h+ → 1h). Editable by admins only (enforced in the routes layer).
+  break_policy: {
+    enabled: {
+      type: Boolean,
+      default: true
+    },
+    tiers: {
+      type: [{
+        min_hours: {
+          type: Number,
+          required: true,
+          min: [0, 'Minimum hours cannot be negative'],
+          max: [24, 'Minimum hours cannot exceed 24']
+        },
+        deduction_hours: {
+          type: Number,
+          required: true,
+          min: [0, 'Deduction cannot be negative'],
+          max: [24, 'Deduction cannot exceed 24']
+        },
+        _id: false
+      }],
+      default: () => ([
+        { min_hours: 8, deduction_hours: 0.5 },
+        { min_hours: 12, deduction_hours: 1 }
+      ])
+    }
+  },
   is_active: {
     type: Boolean,
     default: true
@@ -95,6 +126,7 @@ homeSchema.virtual('publicInfo').get(function() {
     contact_info: this.contact_info,
     capacity: this.capacity,
     operating_hours: this.operating_hours,
+    break_policy: this.break_policy,
     is_active: this.is_active
   };
 });

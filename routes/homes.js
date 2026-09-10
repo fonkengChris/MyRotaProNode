@@ -65,6 +65,13 @@ router.put('/:id', authenticateToken, requireRole(['admin', 'key_worker']), asyn
       req.body.manager_id = null;
     }
 
+    // Break deduction policy directly affects payable hours, so only admins may
+    // change it. Non-admin managers can edit other home fields, but any break_policy
+    // they send is ignored (the stored value is left untouched).
+    if (req.user.role !== 'admin') {
+      delete req.body.break_policy;
+    }
+
     const home = await Home.findByIdAndUpdate(
       req.params.id,
       req.body,
