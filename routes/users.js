@@ -43,7 +43,7 @@ router.get('/', async (req, res) => {
 // only way to add users to the system.
 router.post('/', requireRole(['admin']), async (req, res) => {
   try {
-    const { name, email, phone, password, role, type, home_id, homes } = req.body;
+    const { name, email, phone, password, role, type, home_id, homes, annual_leave_entitlement_days } = req.body;
 
     if (!name || !email || !phone || !password || !role) {
       return res.status(400).json({ error: 'Name, email, phone, password and role are required' });
@@ -69,6 +69,12 @@ router.post('/', requireRole(['admin']), async (req, res) => {
       role,
       type: type || 'fulltime'
     };
+
+    // Optional manager-set override; otherwise the model's pre-save hook derives the
+    // statutory default from `type`.
+    if (annual_leave_entitlement_days !== undefined && annual_leave_entitlement_days !== null && annual_leave_entitlement_days !== '') {
+      userData.annual_leave_entitlement_days = annual_leave_entitlement_days;
+    }
 
     // Attach a home if provided (non-admin users). Accept either `home_id` or a
     // `homes` array from the client.
@@ -153,6 +159,7 @@ router.put('/:id', async (req, res) => {
       delete updateData.is_active;
       delete updateData.max_hours_per_week;
       delete updateData.min_hours_per_week;
+      delete updateData.annual_leave_entitlement_days;
     }
 
     const user = await User.findByIdAndUpdate(

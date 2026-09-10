@@ -73,6 +73,16 @@ const userSchema = new mongoose.Schema({
     min: [0, 'Minimum hours cannot be negative'],
     max: [168, 'Minimum hours cannot exceed 168 per week']
   },
+  // Annual leave entitlement in days for the current leave year. Defaults follow UK
+  // statutory convention (5.6 weeks → 28 days for a 5-day full-timer, capped at 28;
+  // pro-rata for part-time; 0 for bank staff who accrue instead). Auto-derived from
+  // `type` in the pre-save hook unless explicitly set, so managers can override it.
+  annual_leave_entitlement_days: {
+    type: Number,
+    default: 28,
+    min: [0, 'Entitlement cannot be negative'],
+    max: [366, 'Entitlement cannot exceed 366 days']
+  },
   homes: [{
     home_id: {
       type: mongoose.Schema.Types.ObjectId,
@@ -150,6 +160,26 @@ userSchema.pre('save', async function(next) {
         break;
       case 'bank':
         this.min_hours_per_week = 0;
+        break;
+    }
+  }
+
+  // Derive the statutory annual leave default from employment type, unless the
+  // entitlement was explicitly provided (manager override). Part-time is pro-rated
+  // against a 40h full-time week; bank staff hold no fixed entitlement (they accrue).
+  if (this.isModified('type') && !this.isModified('annual_leave_entitlement_days')) {
+    switch (this.type) {
+      case 'fulltime':
+        this.annual_leave_entitlement_days = 28;
+        break;
+      case 'parttime':
+        this.annual_leave_entitlement_days = Math.min(
+          28,
+          Math.round(28 * ((this.min_hours_per_week || 0) / 40))
+        );
+        break;
+      case 'bank':
+        this.annual_leave_entitlement_days = 0;
         break;
     }
   }
@@ -263,6 +293,7 @@ userSchema.virtual('publicInfo').get(function() {
     role: this.role,
     type: this.type,
     min_hours_per_week: this.min_hours_per_week,
+    annual_leave_entitlement_days: this.annual_leave_entitlement_days,
     homes: this.homes,
     default_home_id: this.default_home_id,
     is_active: this.is_active,
