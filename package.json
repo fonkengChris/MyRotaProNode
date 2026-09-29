@@ -15,6 +15,8 @@
     "seed-admin": "node scripts/seedAdminUser.js",
     "seed-org": "node scripts/seedFullOrganization.js",
     "seed-prod": "node scripts/seedProductionOrg.js",
+    "seed-staff": "node scripts/seedStaffFromSpreadsheet.js",
+    "export-credentials": "node scripts/exportCredentialsPdf.js",
     "create-test-users": "node scripts/createTestUsers.js",
     "create-weekly-shifts": "node scripts/createWeeklyShifts.js",
     "restore-backup": "node scripts/restoreBackup.js",
