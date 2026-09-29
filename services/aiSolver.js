@@ -5,6 +5,11 @@ const Availability = require('../models/Availability');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
 
+// Roles the AI solver is allowed to auto-assign. Admins, key workers and senior staff
+// are rostered by hand by the admin on the rota grid, so the solver never allocates
+// them — on the rota grid or in timetable generation.
+const AUTO_ASSIGNABLE_ROLES = ['support_worker'];
+
 /** YYYY-MM-DD for a Date or date string (shift.date). */
 function shiftDateYmd(shift) {
   if (!shift || shift.date == null) return '';
@@ -121,8 +126,12 @@ class AISolver {
 
   // Main method to generate rota assignments
   // serviceId: omit or pass null/undefined to include all services (multi-service / cross-service staff)
-  async generateRota(weekStartDate, weekEndDate, homeIds, serviceId, existingShifts = []) {
+  // options.allowedRoles: overrides AUTO_ASSIGNABLE_ROLES for callers that need a
+  //   different pool (defaults to support workers only)
+  async generateRota(weekStartDate, weekEndDate, homeIds, serviceId, existingShifts = [], options = {}) {
     try {
+      const allowedRoleList = options.allowedRoles || AUTO_ASSIGNABLE_ROLES;
+      const allowedRoles = new Set(allowedRoleList);
       // Convert string dates to Date objects if needed
       const startDate = typeof weekStartDate === 'string' ? new Date(weekStartDate) : weekStartDate;
       const endDate = typeof weekEndDate === 'string' ? new Date(weekEndDate) : weekEndDate;
@@ -139,13 +148,30 @@ class AISolver {
         typeof homeId === 'string' ? new mongoose.Types.ObjectId(homeId) : homeId
       );
       
-      const staff = await User.find({ 
+      const allStaff = await User.find({ 
         'homes.home_id': { $in: homeIdObjs }, 
         is_active: true 
-      }).select('_id name skills preferred_shift_types max_hours_per_week type homes');
+      }).select('_id name role skills preferred_shift_types max_hours_per_week type homes');
       
-      if (staff.length === 0) {
+      if (allStaff.length === 0) {
         throw new Error('No staff available for the specified homes');
+      }
+
+      // Keep only auto-assignable roles. `role` is already canonical here (the User
+      // model normalizes legacy values such as home_manager on hydration).
+      const staff = allStaff.filter((member) => allowedRoles.has(member.role));
+
+      if (staff.length === 0) {
+        throw new Error(
+          `No assignable staff for the specified homes. The AI solver only allocates: ${allowedRoleList.join(', ')}. ` +
+          'Other roles are rostered manually on the rota grid.'
+        );
+      }
+
+      if (staff.length < allStaff.length) {
+        console.log(
+          `AI Solver: ${staff.length}/${allStaff.length} staff member(s) are auto-assignable (roles: ${allowedRoleList.join(', ')})`
+        );
       }
 
       // Get all home IDs where staff members work (not just the target homes)
@@ -1826,3 +1852,4 @@ class AISolver {
 }
 
 module.exports = AISolver;
+module.exports.AUTO_ASSIGNABLE_ROLES = AUTO_ASSIGNABLE_ROLES;
