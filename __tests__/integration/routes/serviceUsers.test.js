@@ -59,6 +59,33 @@ describe('Service Users Routes', () => {
       expect(response.body.error).toContain('key worker');
     });
 
+    test('saves allocated 1:1 hours and rejects out-of-range values', async () => {
+      const created = await request(app)
+        .post('/api/service-users')
+        .set('Authorization', getAuthHeader(admin._id))
+        .send({ name: 'Alex', home_id: homeA._id.toString(), one_to_one_hours_per_week: 12.5 })
+        .expect(201);
+      expect(created.body.one_to_one_hours_per_week).toBe(12.5);
+
+      const updated = await request(app)
+        .put(`/api/service-users/${created.body._id}`)
+        .set('Authorization', getAuthHeader(admin._id))
+        .send({ one_to_one_hours_per_week: 20 })
+        .expect(200);
+      expect(updated.body.one_to_one_hours_per_week).toBe(20);
+
+      await request(app)
+        .put(`/api/service-users/${created.body._id}`)
+        .set('Authorization', getAuthHeader(admin._id))
+        .send({ one_to_one_hours_per_week: 200 })
+        .expect(400);
+      await request(app)
+        .post('/api/service-users')
+        .set('Authorization', getAuthHeader(admin._id))
+        .send({ name: 'Blake', home_id: homeA._id.toString(), one_to_one_hours_per_week: -1 })
+        .expect(400);
+    });
+
     test('non-admins cannot create service users', async () => {
       await request(app)
         .post('/api/service-users')

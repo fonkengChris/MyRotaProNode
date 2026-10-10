@@ -28,6 +28,14 @@ async function buildServiceUserData(body, { partial = false } = {}) {
   if (body.name !== undefined) data.name = body.name;
   if (body.notes !== undefined) data.notes = body.notes;
   if (body.is_active !== undefined) data.is_active = !!body.is_active;
+  if (body.one_to_one_hours_per_week !== undefined) {
+    // Blank means "not set"; null clears any stored value on update.
+    const hours = body.one_to_one_hours_per_week;
+    data.one_to_one_hours_per_week = hours === '' || hours === null ? null : Number(hours);
+    if (data.one_to_one_hours_per_week !== null && Number.isNaN(data.one_to_one_hours_per_week)) {
+      return { error: '1:1 hours must be a number' };
+    }
+  }
 
   if (body.home_id !== undefined || !partial) {
     const homeId = body.home_id && body.home_id._id ? body.home_id._id : body.home_id;

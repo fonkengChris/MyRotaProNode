@@ -32,6 +32,13 @@ const organizationSettingsSchema = new mongoose.Schema({
     night: { type: [String], default: [] },
     escalation: { type: [String], default: [] }
   },
+  // Recurring key-worker responsibilities shown on the Key Worker Home page,
+  // grouped by how often they come round. Static prompts, not tracked tasks.
+  key_worker_tasks: {
+    daily: { type: [String], default: [] },
+    weekly: { type: [String], default: [] },
+    monthly: { type: [String], default: [] }
+  },
   updated_at: { type: Date, default: Date.now },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
@@ -104,17 +111,48 @@ const DEFAULTS = {
       'Record all incidents accurately',
       'Follow service policies at all times'
     ]
+  },
+  key_worker_tasks: {
+    daily: [
+      'Check in on each of your service users, in person or through the house team',
+      'Read daily notes and handover for your service users',
+      'Follow up incidents, safeguarding concerns and changes in health or behaviour',
+      'Check MAR charts and medication records for your service users',
+      'Reply to messages from families and professionals'
+    ],
+    weekly: [
+      'Hold 1:1 support sessions with each service user, in line with their allocated hours',
+      'Review progress against support-plan goals',
+      "Audit staff records in your service users' homes: training, supervision, DBS and right-to-work",
+      "Check the rota covers each service user's allocated support hours",
+      'Plan activities and appointments for the coming week',
+      'Check personal finance and petty-cash records'
+    ],
+    monthly: [
+      'Review and update support plans and risk assessments',
+      'Write a monthly key-worker summary for each service user',
+      "Check in with, or supervise, staff in your service users' homes",
+      'Audit the quality of care records: daily notes and incident forms',
+      'Review health appointments: GP, dentist, optician and annual health check',
+      'Liaise with families, social workers and commissioners'
+    ]
   }
 };
 
 // Returns the single settings document, creating it (seeded with DEFAULTS) if it
 // doesn't exist yet.
 organizationSettingsSchema.statics.getSettings = async function () {
-  let settings = await this.findOne();
-  if (!settings) {
-    settings = await this.create(DEFAULTS);
+  const raw = await this.findOne().lean();
+  if (!raw) {
+    return this.create(DEFAULTS);
   }
-  return settings;
+  // Documents created before key_worker_tasks existed get the defaults once. Checked
+  // on the raw doc because hydration fills in empty arrays, which would otherwise be
+  // indistinguishable from an admin deliberately clearing a section.
+  if (raw.key_worker_tasks === undefined) {
+    await this.updateOne({ _id: raw._id }, { $set: { key_worker_tasks: DEFAULTS.key_worker_tasks } });
+  }
+  return this.findById(raw._id);
 };
 
 organizationSettingsSchema.statics.DEFAULTS = DEFAULTS;

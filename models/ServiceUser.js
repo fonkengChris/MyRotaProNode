@@ -20,6 +20,12 @@ const serviceUserSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Allocated 1:1 support hours per week; differs per person. Informational only.
+  one_to_one_hours_per_week: {
+    type: Number,
+    min: [0, 'Hours cannot be negative'],
+    max: [168, 'Hours cannot exceed 168 per week']
+  },
   notes: {
     type: String,
     trim: true,
