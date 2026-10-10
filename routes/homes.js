@@ -59,6 +59,11 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 // Update home
 router.put('/:id', authenticateToken, requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
+    // Key workers may only edit homes they can access (own or service users' homes).
+    if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(req.params.id)) {
+      return res.status(403).json({ error: 'Access denied. You can only edit your own home.' });
+    }
+
     // A blank manager_id means "no manager"; store null rather than "" so the
     // ObjectId cast doesn't fail.
     if (req.body.manager_id === '') {

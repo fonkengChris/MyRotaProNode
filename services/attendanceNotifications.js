@@ -10,6 +10,7 @@
  */
 const User = require('../models/User');
 const Message = require('../models/Message');
+const ServiceUser = require('../models/ServiceUser');
 const { sendPushToUser } = require('./pushService');
 
 function homeLabel(shift) {
@@ -20,12 +21,16 @@ function homeLabel(shift) {
 
 // Managers/admins who should receive escalations for a given home.
 async function getManagementRecipients(homeId) {
+  // Key workers supporting a service user in this home count too, even if they
+  // aren't attached to the home directly.
+  const serviceUserKeyWorkerIds = homeId ? await ServiceUser.getKeyWorkerIdsForHome(homeId) : [];
   return User.find({
     is_active: true,
     $or: [
       { role: 'admin' },
       // roleQueryValue also matches legacy home_manager rows that were never migrated.
       { role: User.roleQueryValue('key_worker'), 'homes.home_id': homeId },
+      { role: User.roleQueryValue('key_worker'), _id: { $in: serviceUserKeyWorkerIds } },
     ],
   }).select('name email role');
 }

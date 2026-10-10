@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { authenticateToken, requireRole, requireHomeAccess } = require('../../../middleware/auth');
+const { authenticateToken, requireRole, requireHomeAccess, getUserHomeIds } = require('../../../middleware/auth');
 const User = require('../../../models/User');
 const { createTestUser, createTestHome } = require('../../../tests/utils/testHelpers');
 
@@ -254,5 +254,20 @@ describe('Auth Middleware', () => {
       expect(next).toHaveBeenCalled();
     });
   });
-});
 
+  describe('getUserHomeIds', () => {
+    test('merges own homes with service-user homes, without duplicates', () => {
+      const user = {
+        homes: [{ home_id: 'home-a' }, { home_id: 'home-b' }],
+        $locals: { serviceUserHomeIds: ['home-b', 'home-c'] }
+      };
+      expect(getUserHomeIds(user)).toEqual(['home-a', 'home-b', 'home-c']);
+    });
+
+    test('works for users with no direct homes', () => {
+      expect(getUserHomeIds({ homes: [], $locals: { serviceUserHomeIds: ['home-c'] } })).toEqual(['home-c']);
+      expect(getUserHomeIds({})).toEqual([]);
+      expect(getUserHomeIds(null)).toEqual([]);
+    });
+  });
+});

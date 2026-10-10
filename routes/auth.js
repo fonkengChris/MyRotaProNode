@@ -83,7 +83,11 @@ router.get('/me', authenticateToken, async (req, res) => {
     const user = await User.findById(req.user._id).populate('homes.home_id', 'name location');
     
     res.json({
-      user: user.publicInfo,
+      user: {
+        ...user.publicInfo,
+        // Homes reached through the key worker's service users (empty for other roles).
+        service_user_home_ids: req.user.$locals.serviceUserHomeIds || []
+      },
       permissions: user.getPermissions()
     });
   } catch (error) {

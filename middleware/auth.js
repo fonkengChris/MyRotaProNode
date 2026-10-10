@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const ServiceUser = require('../models/ServiceUser');
 
 // Middleware to authenticate JWT token
 const authenticateToken = async (req, res, next) => {
@@ -30,6 +31,12 @@ const authenticateToken = async (req, res, next) => {
       });
     }
     
+    // Key workers aren't tied to houses: they also reach the homes their service
+    // users live in. Resolved once per request; read via getUserHomeIds().
+    if (user.role === 'key_worker') {
+      user.$locals.serviceUserHomeIds = await ServiceUser.getHomeIdsForKeyWorker(user._id);
+    }
+
     // Add user to request object
     req.user = user;
     next();
@@ -54,15 +61,21 @@ const authenticateToken = async (req, res, next) => {
 };
 
 // Roles that may access management pages/data.
-// Admins see every home; key workers are scoped to their own home(s).
+// Admins see every home; key workers are scoped to their own home(s) plus the
+// homes their service users live in.
 const MANAGER_ROLES = ['admin', 'key_worker'];
 
-// Return the list of home id strings a user is attached to.
+// Return the list of home id strings a user can access: homes they're attached to,
+// plus (for key workers loaded via authenticateToken) their service users' homes.
 const getUserHomeIds = (user) => {
-  if (!user || !Array.isArray(user.homes)) return [];
-  return user.homes
-    .filter(home => home && home.home_id)
-    .map(home => home.home_id.toString());
+  if (!user) return [];
+  const direct = Array.isArray(user.homes)
+    ? user.homes
+      .filter(home => home && home.home_id)
+      .map(home => home.home_id.toString())
+    : [];
+  const viaServiceUsers = (user.$locals && user.$locals.serviceUserHomeIds) || [];
+  return [...new Set([...direct, ...viaServiceUsers])];
 };
 
 // True when the user is allowed to reach management-only functionality.
@@ -114,8 +127,8 @@ const requireHomeAccess = (homeIdParam = 'homeId') => {
         return next();
       }
       
-      // Check if user belongs to the home (check homes array)
-      if (req.user.homes && req.user.homes.some(home => home.home_id.toString() === homeId.toString())) {
+      // Check if user can access the home (own homes or service users' homes)
+      if (homeId && getUserHomeIds(req.user).includes(homeId.toString())) {
         return next();
       }
       

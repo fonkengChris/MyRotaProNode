@@ -6,7 +6,7 @@ const Home = require('../models/Home');
 const User = require('../models/User');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const OvertimeRequest = require('../models/OvertimeRequest');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const { getShiftHourBreakdown, workedHourBreakdown } = require('../utils/shiftHours');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
@@ -60,14 +60,6 @@ function requireDateRange(req, res) {
     return null;
   }
   return { startDate, endDate };
-}
-
-function getUserHomeIds(user) {
-  const homes = Array.isArray(user.homes) ? user.homes : [];
-  return homes
-    .map((h) => h && h.home_id)
-    .filter(Boolean)
-    .map((id) => String(id));
 }
 
 // Fallback break-deduction bands, used when a home has no configured policy (e.g.
