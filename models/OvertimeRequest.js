@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 /**
  * Overtime request raised when a staff member clocks out more than
  * OVERTIME_ELIGIBLE_MINUTES past their scheduled shift end. The requested
- * minutes only count toward paid hours once a manager/admin approves
+ * minutes only count toward paid hours once an admin approves
  * (see routes/payroll.js reconciliation).
  */
 const overtimeRequestSchema = new mongoose.Schema({
@@ -37,6 +37,8 @@ const overtimeRequestSchema = new mongoose.Schema({
   },
   reason: {
     type: String,
+    required: [true, 'A reason is required'],
+    trim: true,
     maxlength: [500, 'Reason cannot exceed 500 characters']
   },
   status: {

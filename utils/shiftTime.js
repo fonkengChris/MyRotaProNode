@@ -12,8 +12,10 @@ const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Europe/London';
 
 // How early (minutes before scheduled start) staff may clock in.
 const EARLY_CLOCK_IN_MINUTES = 15;
-// A clock-out this many minutes past scheduled end makes the shift overtime-eligible.
-const OVERTIME_ELIGIBLE_MINUTES = 30;
+// Grace period after scheduled end to clock out. Still clocked in past this -> admins are
+// notified, and a clock-out beyond it makes the shift overtime-eligible (the staff member
+// may request overtime, which only counts toward paid hours once an admin approves it).
+const OVERTIME_ELIGIBLE_MINUTES = 15;
 // Clocking in this many minutes (or more) after scheduled start deducts the late
 // time from worked/paid hours. Lateness below this is forgiven (grace).
 const LATE_ARRIVAL_MINUTES = 15;

@@ -4,6 +4,7 @@ const OvertimeRequest = require('../models/OvertimeRequest');
 const Shift = require('../models/Shift');
 const { requireRole } = require('../middleware/auth');
 const { shiftEndDate, OVERTIME_ELIGIBLE_MINUTES } = require('../utils/shiftTime');
+const { notifyAdminsOvertimeRequested } = require('../services/attendanceNotifications');
 
 // List overtime requests. Staff see their own; managers/admins can filter by status/home.
 router.get('/', async (req, res) => {
@@ -42,7 +43,17 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'shift_id is required' });
     }
 
-    const shift = await Shift.findById(shift_id);
+    // Overtime is only paid when the delay was caused by work duties, so the staff
+    // member must explain it for the admin to validate.
+    const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+    if (!trimmedReason) {
+      return res.status(400).json({
+        error: 'A reason is required',
+        message: 'Explain which work duties kept you past the end of your shift.'
+      });
+    }
+
+    const shift = await Shift.findById(shift_id).populate('home_id', 'name');
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
@@ -84,14 +95,22 @@ router.post('/', async (req, res) => {
     const overtime = new OvertimeRequest({
       shift_id: shift._id,
       user_id: currentUser._id,
-      home_id: shift.home_id,
+      // populated() keeps the raw id even if the home doc is gone.
+      home_id: shift.populated('home_id') || shift.home_id,
       scheduled_end: scheduledEnd,
       actual_clock_out: assignment.clock_out_time,
       requested_minutes: minutes,
-      reason,
+      reason: trimmedReason,
     });
 
     await overtime.save();
+
+    try {
+      await notifyAdminsOvertimeRequested(shift, currentUser, minutes, trimmedReason);
+    } catch (notifyError) {
+      console.error('Failed to notify admins of overtime request:', notifyError.message);
+    }
+
     res.status(201).json(overtime);
   } catch (error) {
     console.error('Error creating overtime request:', error);

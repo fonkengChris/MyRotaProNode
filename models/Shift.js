@@ -105,6 +105,11 @@ const shiftSchema = new mongoose.Schema({
     clock_in_escalation_sent_at: {
       type: Date,
       default: null
+    },
+    // Set when admins were told the staff member hadn't clocked out after the grace period.
+    clock_out_escalation_sent_at: {
+      type: Date,
+      default: null
     }
   }],
   is_urgent: {

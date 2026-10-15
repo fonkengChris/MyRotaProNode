@@ -5,7 +5,7 @@ const moment = require('moment-timezone');
 const Shift = require('../../../models/Shift');
 const Message = require('../../../models/Message');
 const { runAttendanceCheck } = require('../../../services/attendanceScheduler');
-const { APP_TIMEZONE } = require('../../../utils/shiftTime');
+const { APP_TIMEZONE, shiftStartDate } = require('../../../utils/shiftTime');
 const { createTestUser, createTestHome } = require('../../../tests/utils/testHelpers');
 
 // Build a shift that started `minutesAgo` minutes ago (in APP_TIMEZONE) lasting 8h.
@@ -119,5 +119,44 @@ describe('attendanceScheduler.runAttendanceCheck', () => {
 
     await runAttendanceCheck();
     expect(await Message.find({ to_user_id: worker._id })).toHaveLength(1);
+  });
+
+  describe('clock-out grace period', () => {
+    // Shift that ended `minutesAgo` minutes ago, with the worker clocked in at its start.
+    async function makeOverrunShift(minutesAgo) {
+      const shift = await makeLateShift({ home, worker, minutesAgo: 8 * 60 + minutesAgo });
+      shift.assigned_staff[0].clock_in_time = shiftStartDate(shift);
+      shift.assigned_staff[0].attendance_status = 'clocked_in';
+      await shift.save();
+      return shift;
+    }
+
+    test('no admin notice within the 15-minute grace period', async () => {
+      await makeOverrunShift(10);
+      await runAttendanceCheck();
+      expect(await Message.find({ to_user_id: admin._id })).toHaveLength(0);
+    });
+
+    test('notifies admins only (once) when still clocked in 16 minutes after end', async () => {
+      const shift = await makeOverrunShift(16);
+
+      await runAttendanceCheck();
+      await runAttendanceCheck();
+
+      expect(await Message.find({ to_user_id: admin._id })).toHaveLength(1);
+      expect(await Message.find({ to_user_id: manager._id })).toHaveLength(0);
+      const updated = await Shift.findById(shift._id);
+      expect(updated.assigned_staff[0].clock_out_escalation_sent_at).toBeTruthy();
+    });
+
+    test('no admin notice once the worker has clocked out', async () => {
+      const shift = await makeOverrunShift(20);
+      shift.assigned_staff[0].clock_out_time = new Date();
+      shift.assigned_staff[0].attendance_status = 'clocked_out';
+      await shift.save();
+
+      await runAttendanceCheck();
+      expect(await Message.find({ to_user_id: admin._id })).toHaveLength(0);
+    });
   });
 });

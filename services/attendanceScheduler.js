@@ -9,6 +9,9 @@
  * member clocks in, `attendance_status` leaves 'not_started' and the assignment is
  * skipped. Shifts whose end has passed with no clock-in are marked 'missed'.
  *
+ * It also watches clock-OUTs: anyone still clocked in OVERTIME_ELIGIBLE_MINUTES (15) after
+ * their scheduled end triggers a one-off notice to admins (`clock_out_escalation_sent_at`).
+ *
  * A 1-to-1 assignment covered by the staff member's own background shift inherits that
  * shift's attendance (see utils/oneToOne.js), so it gets no reminders and is never
  * marked missed; the background shift is checked as usual.
@@ -19,8 +22,17 @@
 const cron = require('node-cron');
 const moment = require('moment-timezone');
 const Shift = require('../models/Shift');
-const { APP_TIMEZONE, shiftStartDate, shiftEndDate } = require('../utils/shiftTime');
-const { notifyLateStaff, notifyManagement } = require('./attendanceNotifications');
+const {
+  APP_TIMEZONE,
+  OVERTIME_ELIGIBLE_MINUTES,
+  shiftStartDate,
+  shiftEndDate,
+} = require('../utils/shiftTime');
+const {
+  notifyLateStaff,
+  notifyManagement,
+  notifyAdminsClockOutOverdue,
+} = require('./attendanceNotifications');
 const { isOneToOne, isCoveredByBackground } = require('../utils/oneToOne');
 
 const REMINDER_MINUTES = parseInt(process.env.ATTENDANCE_REMINDER_MINUTES, 10) || 5;
@@ -29,6 +41,19 @@ const ESCALATION_MINUTES = parseInt(process.env.ATTENDANCE_ESCALATION_MINUTES, 1
 let task = null;
 
 async function runAttendanceCheck(now = new Date()) {
+  await runClockInCheck(now);
+  await runClockOutCheck(now);
+}
+
+async function saveShift(shift) {
+  try {
+    await shift.save();
+  } catch (error) {
+    console.error('[attendanceScheduler] Failed to save shift', shift._id.toString(), error.message);
+  }
+}
+
+async function runClockInCheck(now) {
   const today = moment.tz(now, APP_TIMEZONE).format('YYYY-MM-DD');
   const yesterday = moment.tz(now, APP_TIMEZONE).subtract(1, 'day').format('YYYY-MM-DD');
 
@@ -82,19 +107,52 @@ async function runAttendanceCheck(now = new Date()) {
       }
     }
 
-    if (dirty) {
-      try {
-        await shift.save();
-      } catch (error) {
-        console.error('[attendanceScheduler] Failed to save shift', shift._id.toString(), error.message);
-      }
+    if (dirty) await saveShift(shift);
+  }
+}
+
+// Staff still clocked in past the grace period after scheduled end -> notify admins once.
+async function runClockOutCheck(now) {
+  const today = moment.tz(now, APP_TIMEZONE).format('YYYY-MM-DD');
+  const yesterday = moment.tz(now, APP_TIMEZONE).subtract(1, 'day').format('YYYY-MM-DD');
+
+  const shifts = await Shift.find({
+    date: { $in: [yesterday, today] },
+    is_active: true,
+    assigned_staff: {
+      $elemMatch: {
+        clock_in_time: { $ne: null },
+        clock_out_time: null,
+        clock_out_escalation_sent_at: null,
+      },
+    },
+  })
+    .populate('assigned_staff.user_id', 'name email role')
+    .populate('home_id', 'name');
+
+  for (const shift of shifts) {
+    const minutesOver = (now.getTime() - shiftEndDate(shift).getTime()) / 60000;
+    if (minutesOver < OVERTIME_ELIGIBLE_MINUTES) continue;
+
+    let dirty = false;
+    for (const assignment of shift.assigned_staff) {
+      if (assignment.status === 'declined') continue;
+      if (!assignment.clock_in_time || assignment.clock_out_time) continue;
+      if (assignment.clock_out_escalation_sent_at) continue;
+
+      const staffUser = assignment.user_id && assignment.user_id._id ? assignment.user_id : null;
+      await notifyAdminsClockOutOverdue(shift, staffUser, OVERTIME_ELIGIBLE_MINUTES);
+      assignment.clock_out_escalation_sent_at = now;
+      dirty = true;
     }
+
+    if (dirty) await saveShift(shift);
   }
 }
 
 function startAttendanceScheduler() {
   if (task) return task;
-  console.log(`🕒 Attendance scheduler started (reminder ${REMINDER_MINUTES}m / escalation ${ESCALATION_MINUTES}m, tz ${APP_TIMEZONE}).`);
+  console.log(`🕒 Attendance scheduler started (reminder ${REMINDER_MINUTES}m / escalation ${ESCALATION_MINUTES}m / clock-out grace ${OVERTIME_ELIGIBLE_MINUTES}m, tz ${APP_TIMEZONE}).`);
   task = cron.schedule('* * * * *', async () => {
     try {
       await runAttendanceCheck();

@@ -170,6 +170,7 @@ async function run() {
         scheduled_end: at(date, end),
         actual_clock_out: at(date, sc.out),
         requested_minutes: sc.overtimeMin,
+        reason: 'Stayed to finish handover',
         status: 'approved',
         approved_by: admin._id,
         approved_at: new Date(),

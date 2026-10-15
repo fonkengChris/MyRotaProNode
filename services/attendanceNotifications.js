@@ -96,4 +96,53 @@ async function notifyManagement(shift, staffUser) {
   }
 }
 
-module.exports = { notifyLateStaff, notifyManagement, getManagementRecipients };
+async function getAdminRecipients() {
+  return User.find({ is_active: true, role: 'admin' }).select('name email role');
+}
+
+// Message + push every admin (skipping the staff member themselves).
+async function notifyAdmins(staffUser, body, push) {
+  const admins = await getAdminRecipients();
+  for (const admin of admins) {
+    if (staffUser && admin._id.toString() === staffUser._id.toString()) continue;
+    await safeSendMessage(staffUser && staffUser._id, admin._id, body);
+    await sendPushToUser(admin._id, { url: '/dashboard', ...push });
+  }
+}
+
+/**
+ * Grace-period escalation to admins: the staff member is still clocked in
+ * OVERTIME_ELIGIBLE_MINUTES after their scheduled shift end.
+ */
+async function notifyAdminsClockOutOverdue(shift, staffUser, graceMinutes) {
+  const label = homeLabel(shift);
+  const staffName = staffUser && staffUser.name ? staffUser.name : 'A staff member';
+  const body = `${staffName} has not clocked out ${graceMinutes} minutes after their shift at ${label} ended (${shift.date}, ${shift.start_time}–${shift.end_time}). Any extra time only counts once an overtime request is approved.`;
+
+  await notifyAdmins(staffUser, body, {
+    title: `Not clocked out — ${staffName}`,
+    body,
+    tag: `clock-out-${shift._id}`,
+  });
+}
+
+/** Tell admins a new overtime request is awaiting their validation. */
+async function notifyAdminsOvertimeRequested(shift, staffUser, minutes, reason) {
+  const label = homeLabel(shift);
+  const staffName = staffUser && staffUser.name ? staffUser.name : 'A staff member';
+  const body = `${staffName} requested ${minutes} min overtime for their ${shift.start_time}–${shift.end_time} shift at ${label} (${shift.date}). Reason: ${reason}. Please approve or deny it.`;
+
+  await notifyAdmins(staffUser, body, {
+    title: `Overtime request — ${staffName}`,
+    body,
+    tag: `overtime-${shift._id}`,
+  });
+}
+
+module.exports = {
+  notifyLateStaff,
+  notifyManagement,
+  notifyAdminsClockOutOverdue,
+  notifyAdminsOvertimeRequested,
+  getManagementRecipients,
+};
