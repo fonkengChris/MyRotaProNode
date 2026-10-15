@@ -9,6 +9,10 @@
  * member clocks in, `attendance_status` leaves 'not_started' and the assignment is
  * skipped. Shifts whose end has passed with no clock-in are marked 'missed'.
  *
+ * A 1-to-1 assignment covered by the staff member's own background shift inherits that
+ * shift's attendance (see utils/oneToOne.js), so it gets no reminders and is never
+ * marked missed; the background shift is checked as usual.
+ *
  * NOTE: this assumes a single worker process. Running multiple dynos/instances would
  * double-send; add a distributed lock before scaling out.
  */
@@ -17,6 +21,7 @@ const moment = require('moment-timezone');
 const Shift = require('../models/Shift');
 const { APP_TIMEZONE, shiftStartDate, shiftEndDate } = require('../utils/shiftTime');
 const { notifyLateStaff, notifyManagement } = require('./attendanceNotifications');
+const { isOneToOne, isCoveredByBackground } = require('../utils/oneToOne');
 
 const REMINDER_MINUTES = parseInt(process.env.ATTENDANCE_REMINDER_MINUTES, 10) || 5;
 const ESCALATION_MINUTES = parseInt(process.env.ATTENDANCE_ESCALATION_MINUTES, 10) || 15;
@@ -51,6 +56,11 @@ async function runAttendanceCheck(now = new Date()) {
       if (assignment.attendance_status === 'missed') continue; // already resolved
 
       const staffUser = assignment.user_id && assignment.user_id._id ? assignment.user_id : null;
+
+      if (isOneToOne(shift)) {
+        const staffId = staffUser ? staffUser._id : assignment.user_id;
+        if (staffId && (await isCoveredByBackground(shift, staffId))) continue;
+      }
 
       // Shift already ended and they never clocked in -> mark missed, stop reminding.
       if (now > end) {

@@ -3,6 +3,12 @@ const Shift = require('../models/Shift');
 const User = require('../models/User');
 const ConstraintWeights = require('../models/ConstraintWeights');
 const { getShiftHourBreakdown, restHoursBetween } = require('../utils/shiftHours');
+const {
+  isOneToOne,
+  shiftWindow,
+  findOverlappingAssignedShifts,
+  extraRosteredHours,
+} = require('../utils/oneToOne');
 
 // Minimum rest gap (hours) required between two of a staff member's shifts. Below this an
 // admin may override, and a support worker self-selecting is assigned but flagged for review.
@@ -108,6 +114,7 @@ class SchedulingConflictService {
    * @param {object} [options]
    * @param {string} [options.requesterRole] - Role of user making the assignment (required to exceed full-time weekly cap)
    * @param {string} [options.shiftType] - shift_type of the shift being assigned (for paid-hours / sleep-in rules)
+   * @param {string} [options.shiftId] - id of the shift being assigned (excluded from the user's existing shifts)
    * @param {boolean} [options.override] - When true, suppress overridable conflicts (only overlap can still block)
    * @returns {Promise<Object>} Conflict information
    */
@@ -118,12 +125,24 @@ class SchedulingConflictService {
     try {
       // Same-time double-booking is a hard block for everyone and takes precedence over
       // everything else, so it is evaluated first and returned regardless of `override`.
-      const overlappingShifts = await Shift.find({
+      // Compared on real time windows (date±1) so cross-midnight overlaps are caught.
+      // A 1-to-1 may sit on top of the staff member's own background shift (that is how
+      // background staff cover 1-to-1s); background/background and 1-to-1/1-to-1 overlaps
+      // are blocked.
+      const candidateIsOneToOne = isOneToOne(shiftType);
+      const candidate = {
+        _id: options.shiftId,
         date: shiftDate,
-        'assigned_staff.user_id': userId,
-        start_time: { $lt: shiftEndTime },
-        end_time: { $gt: shiftStartTime }
-      });
+        start_time: shiftStartTime,
+        end_time: shiftEndTime,
+        shift_type: shiftType,
+      };
+      const candidateWindow = shiftWindow(candidate);
+      const overlappingShifts = candidateWindow
+        ? (await findOverlappingAssignedShifts(userId, shiftDate, candidateWindow, {
+            excludeShiftId: options.shiftId,
+          })).filter((s) => isOneToOne(s) === candidateIsOneToOne)
+        : [];
 
       if (overlappingShifts.length > 0) {
         return {
@@ -135,6 +154,11 @@ class SchedulingConflictService {
           overridableConflicts: []
         };
       }
+
+      // Hours a shift adds for this user: a 1-to-1 only counts the time outside their
+      // background shifts (covered 1-to-1s add 0), so nothing is counted twice.
+      const contributionHours = (s, userShifts, baseHours) =>
+        isOneToOne(s) ? extraRosteredHours(s, userShifts) : baseHours(s);
 
       // Collect every overridable violation so the caller can list them in one dialog.
       const overridableConflicts = [];
@@ -152,13 +176,15 @@ class SchedulingConflictService {
       // More than 24 hours rostered on the same day.
       const dailyShifts = await Shift.find({
         date: shiftDate,
-        'assigned_staff.user_id': userId
+        'assigned_staff.user_id': userId,
+        ...(options.shiftId ? { _id: { $ne: options.shiftId } } : {})
       });
-      const totalDailyHours = dailyShifts.reduce(
-        (total, shift) => total + this._shiftDurationHours(shift.start_time, shift.end_time),
+      const dayWithCandidate = [...dailyShifts, candidate];
+      const durationOf = (s) => this._shiftDurationHours(s.start_time, s.end_time);
+      const totalHours = dayWithCandidate.reduce(
+        (total, s) => total + contributionHours(s, dayWithCandidate, durationOf),
         0
       );
-      const totalHours = totalDailyHours + this._shiftDurationHours(shiftStartTime, shiftEndTime);
       if (totalHours > 24) {
         overridableConflicts.push({
           conflictType: 'max_hours_exceeded',
@@ -168,7 +194,6 @@ class SchedulingConflictService {
       }
 
       // Fewer than MIN_REST_HOURS between this shift and an adjacent-day shift.
-      const candidate = { date: shiftDate, start_time: shiftStartTime, end_time: shiftEndTime };
       const nearbyShifts = await Shift.find({
         date: { $in: this._restWindowDates(shiftDate) },
         'assigned_staff.user_id': userId
@@ -196,18 +221,16 @@ class SchedulingConflictService {
         const week = this._weekRangeMondayToSunday(shiftDate);
         const weekShifts = await Shift.find({
           date: { $gte: week.start, $lte: week.end },
-          'assigned_staff.user_id': userId
+          'assigned_staff.user_id': userId,
+          ...(options.shiftId ? { _id: { $ne: options.shiftId } } : {})
         }).select('start_time end_time date shift_type');
 
-        let weeklyHours = weekShifts.reduce(
-          (sum, s) => sum + getShiftHourBreakdown(s).paid_work_hours,
+        const weekWithCandidate = [...weekShifts, candidate];
+        const paidOf = (s) => getShiftHourBreakdown(s).paid_work_hours;
+        const weeklyHours = weekWithCandidate.reduce(
+          (sum, s) => sum + contributionHours(s, weekWithCandidate, paidOf),
           0
         );
-        weeklyHours += getShiftHourBreakdown({
-          start_time: shiftStartTime,
-          end_time: shiftEndTime,
-          shift_type: shiftType,
-        }).paid_work_hours;
 
         if (!ConstraintWeights.canAuthorizeFulltimeOverWeeklyCap(requesterRole, weeklyHours, policy)) {
           overridableConflicts.push({

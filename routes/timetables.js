@@ -139,9 +139,11 @@ async function getShiftObjectIdsToRemoveForTimetable(timetable) {
   const startStr = toYmd(timetable.start_date);
   const endStr = toYmd(timetable.end_date);
   if (homeIds && homeIds.length && startStr && endStr) {
+    // 1-to-1 shifts are created by admins, not by timetable generation, so they survive.
     const inRange = await Shift.find({
       home_id: { $in: homeIds },
-      date: { $gte: startStr, $lte: endStr }
+      date: { $gte: startStr, $lte: endStr },
+      shift_type: { $ne: 'one_to_one' }
     })
       .select('_id')
       .lean();

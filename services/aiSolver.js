@@ -27,9 +27,8 @@ function isWeekendYmd(ymd) {
   return day === 0 || day === 6;
 }
 
-function isSpecialShift(shift) {
-  return String(shift?.shift_type || '').toLowerCase() === 'special';
-}
+
+const { isOneToOne } = require('../utils/oneToOne');
 
 class AISolver {
   constructor() {
@@ -238,6 +237,9 @@ class AISolver {
         }
       }
       
+      // 1-to-1 shifts are created and assigned by admins only; the solver never fills them.
+      shifts = shifts.filter((shift) => !isOneToOne(shift));
+
       // Solve week-by-week when the range spans multiple segments so fairness (e.g. weekends)
       // carries forward; overlap/rest checks use the full in-memory rota built so far.
       const segments = this.computeWeekSegments(startDate, endDate);
@@ -468,7 +470,8 @@ class AISolver {
           date: dateStr,
           start_time: generatedShift.start_time,
           end_time: generatedShift.end_time,
-          service_id: serviceObjectId
+          service_id: serviceObjectId,
+          shift_type: { $ne: 'one_to_one' }
         });
         if (existing) {
           continue;
@@ -1075,13 +1078,10 @@ class AISolver {
     
     // console.log(`AI Solver: Target distribution - Full-time: ${targetFulltimeShifts}, Part-time: ${targetParttimeShifts}, Bank: ${targetBankShifts}`);
     
-    // Date order first; on the same day prioritize special one-to-one coverage.
+    // Date order first, then longer shifts.
     const sortedShifts = [...shifts].sort((a, b) => {
       const dateCmp = shiftDateYmd(a).localeCompare(shiftDateYmd(b));
       if (dateCmp !== 0) return dateCmp;
-
-      const specialCmp = Number(isSpecialShift(b)) - Number(isSpecialShift(a));
-      if (specialCmp !== 0) return specialCmp;
 
       const durationA = this.calculateShiftDuration(a.start_time, a.end_time);
       const durationB = this.calculateShiftDuration(b.start_time, b.end_time);
@@ -1251,13 +1251,10 @@ class AISolver {
     const targetParttimeShifts = Math.min(totalShifts * 0.25, parttimeStaff.length * 8); // 25% of shifts, max 8 per part-time worker (16 hours)
     const targetBankShifts = totalShifts - targetFulltimeShifts - targetParttimeShifts; // Remaining shifts
     
-    // Date order first; within a day prioritize special shifts, then longer shifts.
+    // Date order first, then longer shifts.
     const sortedShifts = [...shifts].sort((a, b) => {
       const dateCmp = shiftDateYmd(a).localeCompare(shiftDateYmd(b));
       if (dateCmp !== 0) return dateCmp;
-
-      const specialCmp = Number(isSpecialShift(b)) - Number(isSpecialShift(a));
-      if (specialCmp !== 0) return specialCmp;
 
       const durationA = this.calculateShiftDuration(a.start_time, a.end_time);
       const durationB = this.calculateShiftDuration(b.start_time, b.end_time);
@@ -1725,6 +1722,8 @@ class AISolver {
     });
     
     for (const shift of overlappingShifts) {
+      // A 1-to-1 may sit on top of a background shift (staff cover it in-shift).
+      if (isOneToOne(shift)) continue;
       // Check for same date overlaps
       if (shift.date === currentDate) {
         // Check for time overlap

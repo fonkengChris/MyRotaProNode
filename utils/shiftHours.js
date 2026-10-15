@@ -3,7 +3,7 @@
  * - `night-sleep` only: the sleep-night portion is midnight (00:00) → shift end and is NOT paid work;
  *   the pre-midnight portion (shift start → 00:00) is regular paid hours. Sleep is paid a flat
  *   allowance (SLEEP_NIGHT_FLAT_PAY_GBP in routes/payroll.js).
- * - `night-wake`, `special`, legacy `night`, and all other types: full shift span = regular paid hours
+ * - `night-wake`, `one_to_one`, legacy `night`, and all other types: full shift span = regular paid hours
  *   (then break deductions apply to that paid portion in the app layer).
  */
 
@@ -189,7 +189,7 @@ function getShiftHourBreakdown(shift, overrideDurationHours) {
         ? shift.duration_hours
         : durationFromTimes(shift.start_time, shift.end_time));
 
-  // Only sleeping-night uses sleep-in; all other types (including `special`) are paid like regular shifts.
+  // Only sleeping-night uses sleep-in; all other types (including `one_to_one`) are paid like regular shifts.
   if (shiftType === 'night-sleep') {
     // Sleep-in is the midnight→end portion of the scheduled window; the pre-midnight portion is
     // regular paid work. Computed from wall-clock times so it works for synthetic shift objects
@@ -227,5 +227,6 @@ module.exports = {
   getShiftHourBreakdown,
   actualDurationHours,
   clampedWorkedDurationHours,
+  effectiveWorkedWindow,
   workedHourBreakdown,
 };

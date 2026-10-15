@@ -9,9 +9,9 @@ const { APP_TIMEZONE } = require('../../../utils/shiftTime');
 const { createTestUser, createTestHome } = require('../../../tests/utils/testHelpers');
 
 // Build a shift that started `minutesAgo` minutes ago (in APP_TIMEZONE) lasting 8h.
-async function makeLateShift({ home, worker, minutesAgo }) {
+async function makeLateShift({ home, worker, minutesAgo, hours = 8, extra = {} }) {
   const start = moment.tz(APP_TIMEZONE).subtract(minutesAgo, 'minutes');
-  const end = start.clone().add(8, 'hours');
+  const end = start.clone().add(hours, 'hours');
   return Shift.create({
     home_id: home._id,
     service_id: new mongoose.Types.ObjectId(),
@@ -21,6 +21,7 @@ async function makeLateShift({ home, worker, minutesAgo }) {
     shift_type: 'day',
     required_staff_count: 1,
     assigned_staff: [{ user_id: worker._id }],
+    ...extra,
   });
 }
 
@@ -85,5 +86,38 @@ describe('attendanceScheduler.runAttendanceCheck', () => {
     await runAttendanceCheck();
 
     expect(await Message.countDocuments({})).toBe(0);
+  });
+
+  test('a 1-to-1 covered by the background shift gets no reminders and is never missed', async () => {
+    const background = await makeLateShift({ home, worker, minutesAgo: 60 });
+    background.assigned_staff[0].clock_in_time = new Date();
+    background.assigned_staff[0].attendance_status = 'clocked_in';
+    await background.save();
+
+    const oneToOne = await makeLateShift({
+      home,
+      worker,
+      minutesAgo: 16,
+      hours: 2,
+      extra: { shift_type: 'one_to_one', service_user_id: new mongoose.Types.ObjectId() },
+    });
+
+    await runAttendanceCheck();
+    expect(await Message.countDocuments({})).toBe(0);
+    const updated = await Shift.findById(oneToOne._id);
+    expect(updated.assigned_staff[0].attendance_status).toBe('not_started');
+  });
+
+  test('an uncovered 1-to-1 is reminded like any shift', async () => {
+    await makeLateShift({
+      home,
+      worker,
+      minutesAgo: 6,
+      hours: 2,
+      extra: { shift_type: 'one_to_one', service_user_id: new mongoose.Types.ObjectId() },
+    });
+
+    await runAttendanceCheck();
+    expect(await Message.find({ to_user_id: worker._id })).toHaveLength(1);
   });
 });

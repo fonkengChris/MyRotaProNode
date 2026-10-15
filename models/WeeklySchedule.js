@@ -31,7 +31,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {
@@ -69,7 +69,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {
@@ -107,7 +107,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {
@@ -145,7 +145,8 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
+          required: true
         },
         required_staff_count: {
           type: Number,
@@ -182,7 +183,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {
@@ -220,7 +221,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {
@@ -258,7 +259,7 @@ const weeklyScheduleSchema = new mongoose.Schema({
         },
         shift_type: {
           type: String,
-          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+          enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split'],
           required: true
         },
         required_staff_count: {

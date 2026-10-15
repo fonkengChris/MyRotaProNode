@@ -7,7 +7,19 @@ const User = require('../models/User');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const OvertimeRequest = require('../models/OvertimeRequest');
 const { requireRole, getUserHomeIds } = require('../middleware/auth');
-const { getShiftHourBreakdown, workedHourBreakdown } = require('../utils/shiftHours');
+const {
+  getShiftHourBreakdown,
+  workedHourBreakdown,
+  effectiveWorkedWindow,
+} = require('../utils/shiftHours');
+const {
+  isOneToOne,
+  shiftWindow,
+  paidPortion,
+  subtractIntervals,
+  isCoveredBy,
+  shiftDateOffset,
+} = require('../utils/oneToOne');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
 
 // Per-role default hourly rates (GBP). Wages are paid at the rate for the staff
@@ -211,7 +223,23 @@ function createEmptyPayrollRow({ uid, name, role, hourlyRate }) {
     // Attendance reconciliation: count of shifts paid on rostered time because clock
     // data was missing/incomplete, so a manager can review them.
     needs_review: 0,
+    // Paid hours from 1-to-1 shifts beyond the staff member's background shifts
+    // (already included in day_hours; reported separately for visibility).
+    one_to_one_hours: 0,
   };
+}
+
+/**
+ * The window of a background assignment that is already paid, so a 1-to-1 over the
+ * same time adds nothing. Draft (and final without a clock-out) use the rostered window;
+ * final with a full clock pair uses the clamped worked window. Final without a clock-in
+ * pays nothing, so nothing is subtracted. Sleep-in time is never "paid" here.
+ */
+function backgroundPaidWindow(shift, assignment, isDraft) {
+  if (isDraft) return paidPortion(shift, shiftWindow(shift));
+  if (!assignment.clock_in_time) return null;
+  const worked = effectiveWorkedWindow(shift, assignment);
+  return paidPortion(shift, worked || shiftWindow(shift));
 }
 
 /** Resolve a user's "home of record" for leave attribution. */
@@ -243,6 +271,105 @@ async function getScopedUsers(homeFilter) {
     map.set(String(user._id), resolveDefaultHomeId(user));
   }
   return map;
+}
+
+/**
+ * Pass 2 of payroll: pay each 1-to-1 assignment only for the time outside the staff
+ * member's background shifts (and outside 1-to-1 time already counted for them).
+ * - Covered (fully inside one of their background shifts) → adds nothing, no clock-in
+ *   needed (attendance is inherited from the background shift).
+ * - Otherwise the normal clock rules apply (final: no clock-in → unpaid; no clock-out →
+ *   rostered + needs_review), then the background paid windows are subtracted.
+ * Extra hours count as day hours, get their own break deduction, and approved overtime
+ * on the 1-to-1 is added on top as usual.
+ */
+async function addOneToOneHours({
+  oneToOneShifts,
+  isDraft,
+  scopedUsers,
+  approvedOvertime,
+  breakPolicyByHome,
+  ensureRow,
+}) {
+  if (!oneToOneShifts.length) return;
+
+  const staffIds = new Set();
+  let minDate = null;
+  let maxDate = null;
+  for (const shift of oneToOneShifts) {
+    for (const a of shift.assigned_staff || []) {
+      if (a.user_id && a.user_id._id) staffIds.add(String(a.user_id._id));
+    }
+    if (!minDate || shift.date < minDate) minDate = shift.date;
+    if (!maxDate || shift.date > maxDate) maxDate = shift.date;
+  }
+  if (!staffIds.size) return;
+
+  // Background shifts of these staff around the period, at any home (date±1 so
+  // overnight shifts that cover an early-morning 1-to-1 are included).
+  const backgroundShifts = await Shift.find({
+    date: { $gte: shiftDateOffset(minDate, -1), $lte: shiftDateOffset(maxDate, 1) },
+    is_active: true,
+    shift_type: { $ne: 'one_to_one' },
+    'assigned_staff.user_id': { $in: [...staffIds] },
+  });
+
+  const bgShiftsByUser = new Map();
+  const paidWindowsByUser = new Map();
+  for (const shift of backgroundShifts) {
+    for (const a of shift.assigned_staff || []) {
+      const uid = String(a.user_id);
+      if (!staffIds.has(uid)) continue;
+      if (!bgShiftsByUser.has(uid)) bgShiftsByUser.set(uid, []);
+      bgShiftsByUser.get(uid).push(shift);
+      const w = backgroundPaidWindow(shift, a, isDraft);
+      if (w) {
+        if (!paidWindowsByUser.has(uid)) paidWindowsByUser.set(uid, []);
+        paidWindowsByUser.get(uid).push(w);
+      }
+    }
+  }
+
+  const sorted = [...oneToOneShifts].sort((a, b) =>
+    `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`)
+  );
+  for (const shift of sorted) {
+    const breakPolicy = breakPolicyByHome.get(String(shift.home_id));
+    for (const assignment of shift.assigned_staff || []) {
+      const staff = assignment.user_id;
+      if (!staff || !staff._id) continue;
+      const uid = String(staff._id);
+      if (scopedUsers && !scopedUsers.has(uid)) continue;
+
+      if (isCoveredBy(shift, bgShiftsByUser.get(uid) || [])) continue;
+
+      let window = shiftWindow(shift);
+      let needsReview = false;
+      if (!isDraft) {
+        if (!assignment.clock_in_time) continue;
+        const worked = effectiveWorkedWindow(shift, assignment);
+        if (worked) window = worked;
+        else needsReview = true;
+      }
+      if (!window) continue;
+
+      const counted = paidWindowsByUser.get(uid) || [];
+      const extra = subtractIntervals(window, counted);
+      // Later overlapping 1-to-1s must not pay this time again.
+      paidWindowsByUser.set(uid, [...counted, ...extra.intervals]);
+
+      const overtimeMinutes = approvedOvertime.get(`${shift._id.toString()}:${uid}`) || 0;
+      const breakDeduction = computeBreakDeduction(extra.hours, breakPolicy);
+      const paid = Math.max(0, extra.hours - breakDeduction) + overtimeMinutes / 60;
+      if (paid <= 0 && !needsReview) continue;
+
+      const row = ensureRow(staff);
+      row.break_deductions += breakDeduction;
+      if (needsReview) row.needs_review += 1;
+      row.day_hours += paid;
+      row.one_to_one_hours += paid;
+    }
+  }
 }
 
 async function buildPayrollRecords({
@@ -287,6 +414,7 @@ async function buildPayrollRecords({
           total_sleep_in_pay: 0,
           total_leave_pay: 0,
           total_gross_pay: 0,
+          total_one_to_one_hours: 0,
         },
       };
     }
@@ -328,7 +456,30 @@ async function buildPayrollRecords({
     : await OvertimeRequest.getApprovedMinutesMap(shifts.map((s) => s._id));
 
   const byUser = new Map();
+  const ensureRow = (staff) => {
+    const uid = String(staff._id);
+    if (!byUser.has(uid)) {
+      byUser.set(
+        uid,
+        createEmptyPayrollRow({
+          uid,
+          name: staff.name,
+          role: staff.role,
+          hourlyRate: rateForRole(staff.role, roleRates),
+        })
+      );
+    }
+    return byUser.get(uid);
+  };
+
+  // Pass 1 covers background shifts; 1-to-1 shifts are paid in pass 2 for only the time
+  // outside each staff member's background shifts.
+  const oneToOneShifts = [];
   for (const shift of shifts) {
+    if (isOneToOne(shift)) {
+      oneToOneShifts.push(shift);
+      continue;
+    }
     // Rostered breakdown is the ceiling for pay (clamp-to-rostered policy).
     const rosteredBr = getShiftHourBreakdown(shift);
     const assignments = Array.isArray(shift.assigned_staff) ? shift.assigned_staff : [];
@@ -370,18 +521,7 @@ async function buildPayrollRecords({
       const breakDeduction = computeBreakDeduction(br.paid_work_hours, breakPolicy);
       const paidAfterBreak = Math.max(0, br.paid_work_hours - breakDeduction) + overtimeHours;
 
-      if (!byUser.has(uid)) {
-        byUser.set(
-          uid,
-          createEmptyPayrollRow({
-            uid,
-            name: staff.name,
-            role: staff.role,
-            hourlyRate: rateForRole(staff.role, roleRates),
-          })
-        );
-      }
-      const row = byUser.get(uid);
+      const row = ensureRow(staff);
       row.break_deductions += breakDeduction;
       if (needsReview) row.needs_review += 1;
 
@@ -397,6 +537,8 @@ async function buildPayrollRecords({
       }
     }
   }
+
+  await addOneToOneHours({ oneToOneShifts, isDraft, scopedUsers, approvedOvertime, breakPolicyByHome, ensureRow });
 
   const timeOffRequests = await TimeOffRequest.find({
     status: 'approved',
@@ -450,6 +592,7 @@ async function buildPayrollRecords({
         night_hours: Number(row.night_hours.toFixed(2)),
         paid_hours: Number(row.paid_hours.toFixed(2)),
         break_deductions: Number(row.break_deductions.toFixed(2)),
+        one_to_one_hours: Number(row.one_to_one_hours.toFixed(2)),
         sleep_in_pay: Number(row.sleep_in_pay.toFixed(2)),
         leave_days: row.leave_days,
         leave_pay: Number(row.leave_pay.toFixed(2)),
@@ -467,6 +610,7 @@ async function buildPayrollRecords({
       acc.total_leave_pay += row.leave_pay || 0;
       acc.total_gross_pay += row.gross_pay || 0;
       acc.total_needs_review += row.needs_review || 0;
+      acc.total_one_to_one_hours += row.one_to_one_hours || 0;
       return acc;
     },
     {
@@ -477,6 +621,7 @@ async function buildPayrollRecords({
       total_leave_pay: 0,
       total_gross_pay: 0,
       total_needs_review: 0,
+      total_one_to_one_hours: 0,
     }
   );
 
@@ -490,6 +635,7 @@ async function buildPayrollRecords({
       total_leave_pay: Number(totals.total_leave_pay.toFixed(2)),
       total_gross_pay: Number(totals.total_gross_pay.toFixed(2)),
       total_needs_review: totals.total_needs_review,
+      total_one_to_one_hours: Number(totals.total_one_to_one_hours.toFixed(2)),
     },
   };
 }

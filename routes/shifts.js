@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Shift = require('../models/Shift');
+const ServiceUser = require('../models/ServiceUser');
 const { requireRole } = require('../middleware/auth');
 const {
   shiftStartDate,
@@ -9,6 +10,13 @@ const {
   OVERTIME_ELIGIBLE_MINUTES,
   LATE_ARRIVAL_MINUTES,
 } = require('../utils/shiftTime');
+const {
+  isOneToOne,
+  shiftWindow,
+  windowsOverlap,
+  shiftDateOffset,
+  isCoveredByBackground,
+} = require('../utils/oneToOne');
 
 // Resolve the target staff member for a clock action: support workers may only act on
 // themselves; managers/admins/senior staff may pass a user_id to act on someone's behalf.
@@ -26,19 +34,10 @@ function resolveClockTarget(req) {
   return { userId: currentUser._id.toString() };
 }
 
-function isSpecialShiftType(shiftType) {
-  return String(shiftType || '').toLowerCase() === 'special';
-}
-
-function shouldAllowOverlapBetweenShiftTypes(newShiftType, existingShiftType) {
-  // Special shifts are additive one-to-one style coverage and may overlap regular shifts.
-  return isSpecialShiftType(newShiftType) || isSpecialShiftType(existingShiftType);
-}
-
 // Get all shifts
 router.get('/', async (req, res) => {
   try {
-    const { home_id, service_id, date, start_date, end_date, user_id } = req.query;
+    const { home_id, service_id, service_user_id, kind, date, start_date, end_date, user_id } = req.query;
     const filter = {};
     
     // Validate home_id if provided
@@ -48,6 +47,11 @@ router.get('/', async (req, res) => {
     if (service_id && service_id !== 'undefined' && service_id !== 'null') {
       filter.service_id = service_id;
     }
+    if (service_user_id && service_user_id !== 'undefined' && service_user_id !== 'null') {
+      filter.service_user_id = service_user_id;
+    }
+    if (kind === 'one_to_one') filter.shift_type = 'one_to_one';
+    if (kind === 'background') filter.shift_type = { $ne: 'one_to_one' };
     if (date) filter.date = date;
     if (start_date || end_date) {
       filter.date = {};
@@ -60,7 +64,9 @@ router.get('/', async (req, res) => {
       filter['assigned_staff.user_id'] = user_id;
     }
     
-    const shifts = await Shift.find(filter).populate('service_id', 'name');
+    const shifts = await Shift.find(filter)
+      .populate('service_id', 'name')
+      .populate('service_user_id', 'name');
     res.json(shifts);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch shifts' });
@@ -101,8 +107,10 @@ router.get('/available', async (req, res) => {
       is_active: true
     }).populate('service_id', 'name').populate('home_id', 'name');
 
-    // Filter to shifts that need more staff and user isn't already assigned to
+    // Filter to shifts that need more staff and user isn't already assigned to.
+    // 1-to-1 shifts are admin-assigned, never offered for self-selection.
     const availableShifts = shifts.filter(shift => {
+      if (isOneToOne(shift)) return false;
       const currentAssignments = shift.assigned_staff || [];
       const requiredStaff = shift.required_staff_count || 1;
       
@@ -273,7 +281,9 @@ router.get('/rest-exceptions', requireRole(['admin', 'key_worker']), async (req,
 // Get shift by ID
 router.get('/:id', async (req, res) => {
   try {
-    const shift = await Shift.findById(req.params.id).populate('service_id', 'name');
+    const shift = await Shift.findById(req.params.id)
+      .populate('service_id', 'name')
+      .populate('service_user_id', 'name');
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
@@ -283,219 +293,171 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Fields a client may set on create/update. Everything else (assigned_staff, attendance)
+// is managed by dedicated endpoints.
+const EDITABLE_SHIFT_FIELDS = [
+  'home_id',
+  'service_id',
+  'service_user_id',
+  'date',
+  'start_time',
+  'end_time',
+  'shift_type',
+  'required_staff_count',
+  'is_urgent',
+  'notes',
+  'is_active',
+];
+
+function pickShiftFields(body) {
+  const data = {};
+  for (const key of EDITABLE_SHIFT_FIELDS) {
+    if (body[key] !== undefined) data[key] = body[key];
+  }
+  // An empty picker value means "no service user"; a populated object sends its id.
+  if (data.service_user_id === '') data.service_user_id = null;
+  if (data.service_user_id && typeof data.service_user_id === 'object') {
+    data.service_user_id = data.service_user_id._id || data.service_user_id.id || null;
+  }
+  return data;
+}
+
+// True when another shift at the same home overlaps in real time. 1-to-1 shifts are
+// additive coverage for a single service user and may overlap anything.
+async function hasHomeOverlap({ home_id, date, start_time, end_time, shift_type }, excludeId) {
+  if (isOneToOne(shift_type)) return false;
+  const window = shiftWindow({ date, start_time, end_time });
+  if (!window) return false;
+  const filter = {
+    home_id,
+    date: { $gte: shiftDateOffset(date, -1), $lte: shiftDateOffset(date, 1) },
+  };
+  if (excludeId) filter._id = { $ne: excludeId };
+  const candidates = await Shift.find(filter).select('date start_time end_time shift_type');
+  return candidates.some(
+    (s) => !isOneToOne(s) && windowsOverlap(window, shiftWindow(s))
+  );
+}
+
+// Validate 1-to-1 rules for the merged (existing + incoming) shift data. Returns an
+// { status, error, details } object to send, or null when valid.
+async function checkOneToOneRules(req, merged, existing) {
+  const touchesOneToOne = isOneToOne(merged.shift_type) || (existing && isOneToOne(existing));
+  if (!touchesOneToOne) return null;
+  if (req.user.role !== 'admin') {
+    return { status: 403, error: 'Only admins can create or edit 1-to-1 shifts' };
+  }
+  if (!isOneToOne(merged.shift_type)) return null;
+  if (!merged.service_user_id) {
+    return { status: 400, error: 'Validation failed', details: ['A 1-to-1 shift must be linked to a service user'] };
+  }
+  const serviceUser = await ServiceUser.findById(merged.service_user_id).select('home_id is_active');
+  if (!serviceUser || serviceUser.is_active === false) {
+    return { status: 400, error: 'Validation failed', details: ['Service user not found or inactive'] };
+  }
+  if (String(serviceUser.home_id) !== String(merged.home_id)) {
+    return { status: 400, error: 'Validation failed', details: ["The service user does not belong to this shift's home"] };
+  }
+  return null;
+}
+
+function sendShiftSaveError(res, error, fallback) {
+  if (error.name === 'ValidationError') {
+    const validationErrors = Object.values(error.errors).map(err => err.message);
+    return res.status(400).json({ error: 'Validation failed', details: validationErrors });
+  }
+  if (error.name === 'CastError') {
+    return res.status(400).json({ error: 'Invalid data format', details: error.message });
+  }
+  return res.status(400).json({ error: fallback });
+}
+
 // Create new shift
 router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
+    const data = pickShiftFields(req.body);
+    if (isOneToOne(data.shift_type) && data.required_staff_count === undefined) {
+      data.required_staff_count = 1;
+    }
 
-    
     // Validate that the service exists
     const Service = require('../models/Service');
-    const service = await Service.findById(req.body.service_id);
+    const service = await Service.findById(data.service_id);
     if (!service) {
       return res.status(400).json({ 
         error: 'Service not found', 
         details: ['The specified service does not exist'] 
       });
     }
-    
-    // Check for shift overlaps (handles multi-day shifts)
-    const { home_id, date, start_time, end_time, shift_type } = req.body;
-    
-    // Check for overlaps on the same date
-    const sameDateShifts = await Shift.find({ 
-      home_id, 
-      date,
-      _id: { $ne: req.body.id } // Exclude current shift if updating
-    });
-    
-    // Check for overlaps on the next day ONLY if this is an overnight shift
-    let nextDayShifts = [];
-    const isNewShiftOvernight = start_time > end_time; // New shift spans to next day
-    
-    if (isNewShiftOvernight) {
-      const nextDay = new Date(date);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const nextDayStr = nextDay.toISOString().split('T')[0];
-      
-      nextDayShifts = await Shift.find({ 
-        home_id, 
-        date: nextDayStr,
-        _id: { $ne: req.body.id } // Exclude current shift if updating
-      });
-    }
-    
-    const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
-    
-    const hasOverlap = allRelevantShifts.some(existingShift => {
-      if (shouldAllowOverlapBetweenShiftTypes(shift_type, existingShift.shift_type)) {
-        return false;
-      }
 
-      const existingStart = new Date(`2000-01-01T${existingShift.start_time}`);
-      let existingEnd = new Date(`2000-01-01T${existingShift.end_time}`);
-      const newStart = new Date(`2000-01-01T${start_time}`);
-      let newEnd = new Date(`2000-01-01T${end_time}`);
-      
-      // Handle overnight shifts - only if they actually span to next day
-      const isExistingShiftOvernight = existingShift.start_time > existingShift.end_time;
-      const isNewShiftOvernight = start_time > end_time;
-      
-      if (isExistingShiftOvernight) {
-        existingEnd.setDate(existingEnd.getDate() + 1);
-      }
-      if (isNewShiftOvernight) {
-        newEnd.setDate(newEnd.getDate() + 1);
-      }
-      
-      // Convert all times to minutes since midnight for easier comparison
-      const newStartMinutes = newStart.getHours() * 60 + newStart.getMinutes();
-      const newEndMinutes = newEnd.getHours() * 60 + newEnd.getMinutes();
-      const existingStartMinutes = existingStart.getHours() * 60 + existingStart.getMinutes();
-      const existingEndMinutes = existingEnd.getHours() * 60 + existingEnd.getMinutes();
-      
-      // Check for overlap
-      return !(newEndMinutes <= existingStartMinutes || newStartMinutes >= existingEndMinutes);
-    });
-    
-    if (hasOverlap) {
+    const ruleError = await checkOneToOneRules(req, data, null);
+    if (ruleError) {
+      const { status, ...body } = ruleError;
+      return res.status(status).json(body);
+    }
+
+    if (await hasHomeOverlap(data)) {
       return res.status(400).json({
         error: 'Shift overlap detected',
         details: ['This shift overlaps with an existing shift at the same home']
       });
     }
-    
-    const shift = new Shift(req.body);
+
+    const shift = new Shift(data);
     await shift.save();
     res.status(201).json(shift);
   } catch (error) {
     console.error('❌ Error creating shift:', error);
-    
-    // Provide more detailed error messages
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => err.message);
-      res.status(400).json({ 
-        error: 'Validation failed', 
-        details: validationErrors 
-      });
-    } else if (error.name === 'CastError') {
-      res.status(400).json({ 
-        error: 'Invalid data format', 
-        details: error.message 
-      });
-    } else {
-      res.status(400).json({ error: 'Failed to create shift' });
-    }
+    sendShiftSaveError(res, error, 'Failed to create shift');
   }
 });
 
 // Update shift
 router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
-    // Check for shift overlaps (excluding current shift, handles multi-day shifts)
-    const { home_id, date, start_time, end_time, shift_type } = req.body;
-    
-    // Check for overlaps on the same date
-    const sameDateShifts = await Shift.find({ 
-      home_id, 
-      date,
-      _id: { $ne: req.params.id } // Exclude current shift being updated
-    });
-    
-    // Check for overlaps on the next day ONLY if this is an overnight shift
-    let nextDayShifts = [];
-    const isNewShiftOvernight = start_time > end_time; // New shift spans to next day
-    
-    if (isNewShiftOvernight) {
-      const nextDay = new Date(date);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const nextDayStr = nextDay.toISOString().split('T')[0];
-      
-      nextDayShifts = await Shift.find({ 
-        home_id, 
-        date: nextDayStr,
-        _id: { $ne: req.params.id } // Exclude current shift being updated
-      });
+    const shift = await Shift.findById(req.params.id);
+    if (!shift) {
+      return res.status(404).json({ error: 'Shift not found' });
     }
-    
-    const allRelevantShifts = [...sameDateShifts, ...nextDayShifts];
-    
-    const hasOverlap = allRelevantShifts.some(existingShift => {
-      if (shouldAllowOverlapBetweenShiftTypes(shift_type, existingShift.shift_type)) {
-        return false;
-      }
 
-      const existingStart = new Date(`2000-01-01T${existingShift.start_time}`);
-      let existingEnd = new Date(`2000-01-01T${existingShift.end_time}`);
-      const newStart = new Date(`2000-01-01T${start_time}`);
-      let newEnd = new Date(`2000-01-01T${end_time}`);
-      
-      // Handle overnight shifts - only if they actually span to next day
-      const isExistingShiftOvernight = existingShift.start_time > existingShift.end_time;
-      const isNewShiftOvernight = start_time > end_time;
-      
-      if (isExistingShiftOvernight) {
-        existingEnd.setDate(existingEnd.getDate() + 1);
-      }
-      if (isNewShiftOvernight) {
-        newEnd.setDate(newEnd.getDate() + 1);
-      }
-      
-      // Convert all times to minutes since midnight for easier comparison
-      const newStartMinutes = newStart.getHours() * 60 + newStart.getMinutes();
-      const newEndMinutes = newEnd.getHours() * 60 + newEnd.getMinutes();
-      const existingStartMinutes = existingStart.getHours() * 60 + existingStart.getMinutes();
-      const existingEndMinutes = existingEnd.getHours() * 60 + existingEnd.getMinutes();
-      
-      // Check for overlap
-      return !(newEndMinutes <= existingStartMinutes || newStartMinutes >= existingEndMinutes);
-    });
-    
-    if (hasOverlap) {
+    const data = pickShiftFields(req.body);
+    const merged = { ...shift.toObject(), ...data };
+
+    const ruleError = await checkOneToOneRules(req, merged, shift);
+    if (ruleError) {
+      const { status, ...body } = ruleError;
+      return res.status(status).json(body);
+    }
+    // Leaving the 1-to-1 type drops the service-user link.
+    if (!isOneToOne(merged.shift_type)) data.service_user_id = null;
+
+    if (await hasHomeOverlap(merged, shift._id)) {
       return res.status(400).json({
         error: 'Shift overlap detected',
         details: ['This shift overlaps with an existing shift at the same home']
       });
     }
-    
-    const shift = await Shift.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-    
-    if (!shift) {
-      return res.status(404).json({ error: 'Shift not found' });
-    }
-    
+
+    shift.set(data);
+    await shift.save();
     res.json(shift);
   } catch (error) {
     console.error('❌ Error updating shift:', error);
-    
-    // Provide more detailed error messages
-    if (error.name === 'ValidationError') {
-      const validationErrors = Object.values(error.errors).map(err => err.message);
-      res.status(400).json({ 
-        error: 'Validation failed', 
-        details: validationErrors 
-      });
-    } else if (error.name === 'CastError') {
-      res.status(400).json({ 
-        error: 'Invalid data format', 
-        details: error.message 
-      });
-    } else {
-      res.status(400).json({ error: 'Failed to update shift' });
-    }
+    sendShiftSaveError(res, error, 'Failed to update shift');
   }
 });
 
 // Delete shift
 router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
-    const shift = await Shift.findByIdAndDelete(req.params.id);
-    if (!shift) {
+    const existing = await Shift.findById(req.params.id).select('shift_type');
+    if (!existing) {
       return res.status(404).json({ error: 'Shift not found' });
     }
+    if (isOneToOne(existing) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can delete 1-to-1 shifts' });
+    }
+    await Shift.findByIdAndDelete(req.params.id);
     res.json({ message: 'Shift deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete shift' });
@@ -527,6 +489,14 @@ router.post('/:id/assign', async (req, res) => {
       return res.status(404).json({ error: 'Shift not found' });
     }
 
+    // 1-to-1 shifts are assigned by admins only (no self-selection).
+    if (isOneToOne(shift) && currentUser.role !== 'admin') {
+      return res.status(403).json({
+        error: 'Only admins can assign staff to 1-to-1 shifts',
+        message: 'Only admins can assign staff to 1-to-1 shifts'
+      });
+    }
+
     // Check for scheduling conflicts before assigning staff
     const SchedulingConflictService = require('../services/schedulingConflictService');
     const conflictCheck = await SchedulingConflictService.checkShiftAssignmentConflict(
@@ -534,7 +504,12 @@ router.post('/:id/assign', async (req, res) => {
       shift.date,
       shift.start_time,
       shift.end_time,
-      { requesterRole: currentUser.role, shiftType: shift.shift_type, override: !!override && canOverride }
+      {
+        requesterRole: currentUser.role,
+        shiftType: shift.shift_type,
+        shiftId: shift._id,
+        override: !!override && canOverride
+      }
     );
 
     // Support worker self-selecting a shift that breaks ONLY the <8h rest rule is assigned
@@ -610,6 +585,9 @@ router.post('/:id/assign', async (req, res) => {
 
     const payload = shift.toObject({ virtuals: true });
     payload.rest_exception_pending = restExceptionPending;
+    if (isOneToOne(shift)) {
+      payload.covered_by_background = await isCoveredByBackground(shift, user_id);
+    }
     res.json(payload);
   } catch (error) {
     console.error('Error assigning staff to shift:', error);
@@ -662,6 +640,10 @@ router.post('/:id/rest-exception/:userId/remove', requireRole(['admin', 'key_wor
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
+    if (isOneToOne(shift) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
+    }
+
     shift.removeStaff(req.params.userId);
     await shift.save();
     res.json(shift);
@@ -699,6 +681,15 @@ router.post('/:id/clock-in', async (req, res) => {
 
     if (assignment.clock_in_time) {
       return res.status(400).json({ error: 'Already clocked in to this shift' });
+    }
+
+    // A 1-to-1 inside the staff member's own background shift inherits that shift's
+    // attendance, so there is nothing to clock in to.
+    if (isOneToOne(shift) && (await isCoveredByBackground(shift, target.userId))) {
+      return res.status(409).json({
+        error: 'Covered by your background shift — no clock-in needed',
+        covered_by_background: true
+      });
     }
 
     // Time-window gate: from EARLY_CLOCK_IN_MINUTES before start up to scheduled end.
@@ -801,6 +792,10 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior
       return res.status(404).json({ error: 'Shift not found' });
     }
     
+    if (isOneToOne(shift) && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
+    }
+
     shift.removeStaff(req.params.userId);
     await shift.save();
     

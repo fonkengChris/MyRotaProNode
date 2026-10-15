@@ -43,8 +43,15 @@ const shiftSchema = new mongoose.Schema({
   // night-wake + legacy night: full span = paid hours. night-sleep: 8h sleep-in + remainder paid (see utils/shiftHours).
   shift_type: {
     type: String,
-    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'special'],
+    enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'split', 'one_to_one'],
     required: [true, 'Shift type is required']
+  },
+  // Set only on `one_to_one` shifts: the service user this 1-to-1 support is for.
+  // Background (all other) shifts never carry one. See utils/oneToOne.js.
+  service_user_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ServiceUser',
+    default: null
   },
   required_staff_count: {
     type: Number,
@@ -132,9 +139,25 @@ shiftSchema.index({ 'assigned_staff.user_id': 1 });
 // Supports the admin rest-exception review queue (pending/confirmed flagged assignments).
 shiftSchema.index({ 'assigned_staff.rest_exception_status': 1 });
 shiftSchema.index({ is_active: 1 });
+shiftSchema.index({ service_user_id: 1, date: 1 });
 // Supports the attendance scheduler scan (today's shifts still awaiting clock-in).
 // Keyed on clock_in_time (null) so docs predating the attendance fields still match.
 shiftSchema.index({ date: 1, 'assigned_staff.clock_in_time': 1 });
+
+// A 1-to-1 must name its service user; background shifts must not. Enforced only when
+// the shift is new or either field changes, so legacy migrated 1-to-1s (no service user
+// yet) stay valid until an admin edits them.
+shiftSchema.pre('validate', function(next) {
+  if (!this.isNew && !this.isModified('shift_type') && !this.isModified('service_user_id')) {
+    return next();
+  }
+  if (this.shift_type === 'one_to_one' && !this.service_user_id) {
+    this.invalidate('service_user_id', 'A 1-to-1 shift must be linked to a service user');
+  } else if (this.shift_type !== 'one_to_one' && this.service_user_id) {
+    this.invalidate('service_user_id', 'Only 1-to-1 shifts can be linked to a service user');
+  }
+  next();
+});
 
 // Virtual for shift duration in hours
 shiftSchema.virtual('duration_hours').get(function() {
@@ -181,6 +204,7 @@ shiftSchema.virtual('publicInfo').get(function() {
     start_time: this.start_time,
     end_time: this.end_time,
     shift_type: this.shift_type,
+    service_user_id: this.service_user_id,
     required_staff_count: this.required_staff_count,
     assigned_staff: this.assigned_staff,
     is_urgent: this.is_urgent,
