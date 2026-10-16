@@ -12,9 +12,6 @@ const {
 } = require('../utils/shiftTime');
 const {
   isOneToOne,
-  shiftWindow,
-  windowsOverlap,
-  shiftDateOffset,
   isCoveredByBackground,
 } = require('../utils/oneToOne');
 
@@ -322,23 +319,6 @@ function pickShiftFields(body) {
   return data;
 }
 
-// True when another shift at the same home overlaps in real time. 1-to-1 shifts are
-// additive coverage for a single service user and may overlap anything.
-async function hasHomeOverlap({ home_id, date, start_time, end_time, shift_type }, excludeId) {
-  if (isOneToOne(shift_type)) return false;
-  const window = shiftWindow({ date, start_time, end_time });
-  if (!window) return false;
-  const filter = {
-    home_id,
-    date: { $gte: shiftDateOffset(date, -1), $lte: shiftDateOffset(date, 1) },
-  };
-  if (excludeId) filter._id = { $ne: excludeId };
-  const candidates = await Shift.find(filter).select('date start_time end_time shift_type');
-  return candidates.some(
-    (s) => !isOneToOne(s) && windowsOverlap(window, shiftWindow(s))
-  );
-}
-
 // Validate 1-to-1 rules for the merged (existing + incoming) shift data. Returns an
 // { status, error, details } object to send, or null when valid.
 async function checkOneToOneRules(req, merged, existing) {
@@ -396,12 +376,8 @@ router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), async (re
       return res.status(status).json(body);
     }
 
-    if (await hasHomeOverlap(data)) {
-      return res.status(400).json({
-        error: 'Shift overlap detected',
-        details: ['This shift overlaps with an existing shift at the same home']
-      });
-    }
+    // Background shifts at the same home may overlap (e.g. 08:00-20:00 alongside
+    // 10:00-18:00); staff double-booking is checked when staff are assigned.
 
     const shift = new Shift(data);
     await shift.save();
@@ -430,13 +406,6 @@ router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (
     }
     // Leaving the 1-to-1 type drops the service-user link.
     if (!isOneToOne(merged.shift_type)) data.service_user_id = null;
-
-    if (await hasHomeOverlap(merged, shift._id)) {
-      return res.status(400).json({
-        error: 'Shift overlap detected',
-        details: ['This shift overlaps with an existing shift at the same home']
-      });
-    }
 
     shift.set(data);
     await shift.save();

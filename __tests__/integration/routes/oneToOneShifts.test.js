@@ -142,6 +142,25 @@ describe('1-to-1 shifts', () => {
         .expect(201);
     });
 
+    test('background shifts at the same home may overlap; one staff member cannot work both', async () => {
+      const create = (start_time, end_time) =>
+        request(app)
+          .post('/api/shifts')
+          .set('Authorization', getAuthHeader(admin._id))
+          .send(oneToOneBody({ shift_type: 'day', service_user_id: '', required_staff_count: 1, start_time, end_time }))
+          .expect(201);
+      const long = await create('08:00', '20:00');
+      const short = await create('10:00', '18:00');
+
+      const other = await createTestUser({ email: email('sw2'), homes: [{ home_id: home._id }] });
+      await assign({ _id: long.body._id }, worker).expect(200);
+      await assign({ _id: short.body._id }, other).expect(200);
+
+      const third = await create('09:00', '17:00');
+      const res = await assign({ _id: third.body._id }, worker).expect(409);
+      expect(res.body.conflict.conflictType).toBe('overlapping_shift');
+    });
+
     test('changing a 1-to-1 to a background type drops the service user', async () => {
       const shift = await oneToOne();
       const res = await request(app)
