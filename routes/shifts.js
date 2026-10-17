@@ -1,7 +1,14 @@
 const express = require('express');
 const router = express.Router();
+
+const CAP_CONFLICT = 'fulltime_weekly_cap_exceeded';
+// Rule breaks a staff member's own shift selection may go ahead with, pending review.
+const SELF_SELECT_REVIEWABLE = new Set(['insufficient_rest', CAP_CONFLICT]);
 const Shift = require('../models/Shift');
 const ServiceUser = require('../models/ServiceUser');
+const User = require('../models/User');
+const SolverSettings = require('../models/SolverSettings');
+const { notifyAdminsHoursCapRequested } = require('../services/attendanceNotifications');
 const { requireRole } = require('../middleware/auth');
 const {
   shiftStartDate,
@@ -236,42 +243,72 @@ router.get(
   }
 );
 
-// List rest-exception assignments for admin review (flattened to one row per flagged staff
-// member). Defaults to pending. Registered before `/:id` so the literal path is matched first.
+// Flagged assignments awaiting review, flattened to one row per flagged staff member.
+// `field` is the assignment status field (rest_exception_status / hours_cap_exception_status).
+async function listFlaggedAssignments(field, status, homeId) {
+  const filter = { [`assigned_staff.${field}`]: status };
+  if (homeId) filter.home_id = homeId;
+
+  const shifts = await Shift.find(filter)
+    .populate('assigned_staff.user_id', 'name email role')
+    .populate('service_id', 'name')
+    .sort({ date: 1, start_time: 1 });
+
+  const rows = [];
+  for (const shift of shifts) {
+    for (const a of shift.assigned_staff) {
+      if (a[field] !== status) continue;
+      rows.push({
+        shift_id: shift._id,
+        user: a.user_id,
+        date: shift.date,
+        start_time: shift.start_time,
+        end_time: shift.end_time,
+        shift_type: shift.shift_type,
+        home_id: shift.home_id,
+        service: shift.service_id,
+        [field]: a[field],
+        ...(field === 'hours_cap_exception_status' ? { projected_weekly_hours: a.hours_cap_exception_hours } : {}),
+        assigned_at: a.assigned_at
+      });
+    }
+  }
+  return rows;
+}
+
+// List rest-exception assignments for admin review. Defaults to pending. Registered before
+// `/:id` so the literal path is matched first.
 router.get('/rest-exceptions', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
-    const status = req.query.status || 'pending';
-    const filter = { 'assigned_staff.rest_exception_status': status };
-    if (req.query.home_id) filter.home_id = req.query.home_id;
-
-    const shifts = await Shift.find(filter)
-      .populate('assigned_staff.user_id', 'name email role')
-      .populate('service_id', 'name')
-      .sort({ date: 1, start_time: 1 });
-
-    const rows = [];
-    for (const shift of shifts) {
-      for (const a of shift.assigned_staff) {
-        if (a.rest_exception_status !== status) continue;
-        rows.push({
-          shift_id: shift._id,
-          user: a.user_id,
-          date: shift.date,
-          start_time: shift.start_time,
-          end_time: shift.end_time,
-          shift_type: shift.shift_type,
-          home_id: shift.home_id,
-          service: shift.service_id,
-          rest_exception_status: a.rest_exception_status,
-          assigned_at: a.assigned_at
-        });
-      }
-    }
-
-    res.json(rows);
+    res.json(await listFlaggedAssignments('rest_exception_status', req.query.status || 'pending', req.query.home_id));
   } catch (error) {
     console.error('Error listing rest exceptions:', error);
     res.status(500).json({ error: 'Failed to fetch rest exceptions' });
+  }
+});
+
+// Only the cap approver roles (SolverSettings.manual_assign_cap, default admin) review
+// full-time weekly-cap requests.
+async function requireCapApprover(req, res, next) {
+  try {
+    const { manual_assign_cap } = await SolverSettings.getSettings();
+    if (!manual_assign_cap.approver_roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only ' + manual_assign_cap.approver_roles.join(' or ') + ' can review weekly hours requests' });
+    }
+    next();
+  } catch (error) {
+    console.error('Error checking hours-cap approver:', error);
+    res.status(500).json({ error: 'Failed to check permissions' });
+  }
+}
+
+// List full-time weekly-cap requests (self-selected shifts over the cap). Defaults to pending.
+router.get('/hours-cap-exceptions', requireCapApprover, async (req, res) => {
+  try {
+    res.json(await listFlaggedAssignments('hours_cap_exception_status', req.query.status || 'pending', req.query.home_id));
+  } catch (error) {
+    console.error('Error listing hours-cap exceptions:', error);
+    res.status(500).json({ error: 'Failed to fetch weekly hours requests' });
   }
 });
 
@@ -433,6 +470,157 @@ router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), asyn
   }
 });
 
+/**
+ * Decide what assigning `userId` to `shift` would do, without changing anything. Shared by
+ * the assign route and the self-select preview so both apply exactly the same rules.
+ * Returns `{ error: { status, body } }` when it is refused, otherwise the review flags:
+ * `{ restExceptionPending, capExceptionStatus, capExceptionHours, pendingReasons }`.
+ *
+ * Admins may override any rule (time-off / >24h day / rest / weekly cap) after confirming;
+ * the cap approver roles (SolverSettings.manual_assign_cap, default admin) may confirm the
+ * weekly cap. Staff selecting a shift for themselves that only breaks the rest rule and/or
+ * the weekly cap get it held for them, pending review. Overlap is never overridable.
+ */
+async function evaluateAssignment({ shift, userId, currentUser, override, capPolicy }) {
+  const isSelfAssign = currentUser._id.toString() === userId;
+  const isCapApprover = capPolicy.approver_roles.includes(currentUser.role);
+  const canOverrideType = (type) =>
+    currentUser.role === 'admin' || (type === CAP_CONFLICT && isCapApprover);
+
+  const SchedulingConflictService = require('../services/schedulingConflictService');
+  const conflictCheck = await SchedulingConflictService.checkShiftAssignmentConflict(
+    userId,
+    shift.date,
+    shift.start_time,
+    shift.end_time,
+    {
+      shiftType: shift.shift_type,
+      shiftId: shift._id,
+      homeId: shift.home_id
+    }
+  );
+
+  const decision = { restExceptionPending: false, capExceptionStatus: 'none', capExceptionHours: null, pendingReasons: [] };
+
+  if (conflictCheck.hasConflict) {
+    const friendlyFor = (check) => {
+      switch (check.conflictType) {
+        case 'time_off':
+          return `Cannot assign staff member to shift on ${check.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
+        case 'overlapping_shift':
+          return `Cannot assign staff member - they already have overlapping shifts on ${check.conflicts[0]?.date || 'this date'}`;
+        case 'max_hours_exceeded':
+          return `Cannot assign staff member - this would exceed maximum daily hours (${check.message})`;
+        default:
+          return check.message;
+      }
+    };
+
+    // Same-time double-booking is a hard block for everyone (never overridable).
+    if (conflictCheck.conflictType === 'overlapping_shift') {
+      const msg = friendlyFor(conflictCheck);
+      return {
+        error: {
+          status: 409,
+          body: { error: 'Scheduling conflict detected', conflict: conflictCheck, overridable: false, message: msg, userFriendlyMessage: msg }
+        }
+      };
+    }
+
+    const overridableConflicts = conflictCheck.overridableConflicts || [];
+    const conflictTypes = overridableConflicts.map((c) => c.conflictType);
+    const canOverrideAll = conflictTypes.length > 0 && conflictTypes.every(canOverrideType);
+    const reviewable = conflictTypes.length > 0 && conflictTypes.every((t) => SELF_SELECT_REVIEWABLE.has(t));
+    const capConflict = overridableConflicts.find((c) => c.conflictType === CAP_CONFLICT);
+    const capHours = capConflict?.details?.projected_weekly_hours ?? null;
+
+    if (override && canOverrideAll) {
+      // Confirmed by an approver: record that the cap was knowingly exceeded.
+      if (capConflict) {
+        decision.capExceptionStatus = 'confirmed';
+        decision.capExceptionHours = capHours;
+      }
+    } else if (isSelfAssign && !canOverrideAll && reviewable) {
+      decision.restExceptionPending = conflictTypes.includes('insufficient_rest');
+      if (capConflict) {
+        decision.capExceptionStatus = 'pending';
+        decision.capExceptionHours = capHours;
+      }
+      decision.pendingReasons = overridableConflicts.map((c) => c.message);
+    } else {
+      const msg = friendlyFor(conflictCheck);
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: 'Scheduling conflict detected',
+            conflict: conflictCheck,
+            overridable: canOverrideAll,
+            overridableConflicts,
+            message: msg,
+            userFriendlyMessage: msg
+          }
+        }
+      };
+    }
+  }
+
+  if (shift.assigned_staff.length >= shift.required_staff_count) {
+    return {
+      error: {
+        status: 400,
+        body: {
+          error: 'Shift is already fully staffed',
+          message: `This shift requires ${shift.required_staff_count} staff members and already has ${shift.assigned_staff.length} assigned`
+        }
+      }
+    };
+  }
+
+  if (shift.assigned_staff.some((assignment) => assignment.user_id.toString() === userId)) {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'Staff member already assigned', message: 'This staff member is already assigned to this shift' }
+      }
+    };
+  }
+
+  return decision;
+}
+
+// Preview selecting shifts for yourself: for each shift id, whether it would be assigned
+// straight away ('ok'), held pending admin approval ('pending', with reasons) or refused
+// ('blocked', with the reason). Uses the same rules as POST /:id/assign.
+router.post('/assign-preview', async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.shift_ids) ? req.body.shift_ids.slice(0, 200) : [];
+    const { manual_assign_cap: capPolicy } = await SolverSettings.getSettings();
+    const shifts = await Shift.find({ _id: { $in: ids } });
+    const userId = req.user._id.toString();
+
+    const results = {};
+    for (const shift of shifts) {
+      if (isOneToOne(shift) && req.user.role !== 'admin') {
+        results[shift._id] = { outcome: 'blocked', message: 'Only admins can assign staff to 1-to-1 shifts' };
+        continue;
+      }
+      const decision = await evaluateAssignment({ shift, userId, currentUser: req.user, override: false, capPolicy });
+      if (decision.error) {
+        results[shift._id] = { outcome: 'blocked', message: decision.error.body.message || decision.error.body.error };
+      } else if (decision.pendingReasons.length > 0) {
+        results[shift._id] = { outcome: 'pending', reasons: decision.pendingReasons };
+      } else {
+        results[shift._id] = { outcome: 'ok' };
+      }
+    }
+    res.json(results);
+  } catch (error) {
+    console.error('Error previewing shift selection:', error);
+    res.status(500).json({ error: 'Failed to check shifts' });
+  }
+});
+
 // Assign staff to shift
 router.post('/:id/assign', async (req, res) => {
   try {
@@ -443,9 +631,10 @@ router.post('/:id/assign', async (req, res) => {
     const currentUser = req.user; // This should be set by the authenticateToken middleware
     const allowedRoles = ['admin', 'key_worker', 'senior_staff'];
     const isSelfAssign = currentUser._id.toString() === String(user_id);
-    // Only admins may override rules (time-off / >24h day / rest / weekly cap). Overlap is
-    // never overridable. key_worker can still exceed the weekly cap via requesterRole.
-    const canOverride = currentUser.role === 'admin';
+    // Admins may override any rule (time-off / >24h day / rest / weekly cap) after confirming.
+    // Approver roles in SolverSettings.manual_assign_cap (default admin only) may also confirm
+    // the full-time weekly cap. Overlap is never overridable.
+    const { manual_assign_cap: capPolicy } = await SolverSettings.getSettings();
 
     if (!allowedRoles.includes(currentUser.role) && !isSelfAssign) {
       return res.status(403).json({
@@ -466,94 +655,28 @@ router.post('/:id/assign', async (req, res) => {
       });
     }
 
-    // Check for scheduling conflicts before assigning staff
-    const SchedulingConflictService = require('../services/schedulingConflictService');
-    const conflictCheck = await SchedulingConflictService.checkShiftAssignmentConflict(
-      user_id,
-      shift.date,
-      shift.start_time,
-      shift.end_time,
-      {
-        requesterRole: currentUser.role,
-        shiftType: shift.shift_type,
-        shiftId: shift._id,
-        override: !!override && canOverride
-      }
-    );
-
-    // Support worker self-selecting a shift that breaks ONLY the <8h rest rule is assigned
-    // now and flagged for admin review, rather than blocked.
-    let restExceptionPending = false;
-
-    if (conflictCheck.hasConflict) {
-      const friendlyFor = (check) => {
-        switch (check.conflictType) {
-          case 'time_off':
-            return `Cannot assign staff member to shift on ${check.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
-          case 'overlapping_shift':
-            return `Cannot assign staff member - they already have overlapping shifts on ${check.conflicts[0]?.date || 'this date'}`;
-          case 'max_hours_exceeded':
-            return `Cannot assign staff member - this would exceed maximum daily hours (${check.message})`;
-          default:
-            return check.message;
-        }
-      };
-
-      // Same-time double-booking is a hard block for everyone (never overridable).
-      if (conflictCheck.conflictType === 'overlapping_shift') {
-        const msg = friendlyFor(conflictCheck);
-        return res.status(409).json({
-          error: 'Scheduling conflict detected',
-          conflict: conflictCheck,
-          overridable: false,
-          message: msg,
-          userFriendlyMessage: msg
-        });
-      }
-
-      const conflictTypes = (conflictCheck.overridableConflicts || []).map((c) => c.conflictType);
-      const restOnly = conflictTypes.length > 0 && conflictTypes.every((t) => t === 'insufficient_rest');
-
-      if (isSelfAssign && !canOverride && restOnly) {
-        restExceptionPending = true;
-      } else {
-        const msg = friendlyFor(conflictCheck);
-        return res.status(409).json({
-          error: 'Scheduling conflict detected',
-          conflict: conflictCheck,
-          overridable: !!conflictCheck.overridable && canOverride,
-          overridableConflicts: conflictCheck.overridableConflicts || [],
-          message: msg,
-          userFriendlyMessage: msg
-        });
-      }
+    const decision = await evaluateAssignment({ shift, userId: String(user_id), currentUser, override, capPolicy });
+    if (decision.error) {
+      return res.status(decision.error.status).json(decision.error.body);
     }
+    const { restExceptionPending, capExceptionStatus, capExceptionHours } = decision;
 
-    // Check if shift is already fully staffed
-    if (shift.assigned_staff.length >= shift.required_staff_count) {
-      return res.status(400).json({
-        error: 'Shift is already fully staffed',
-        message: `This shift requires ${shift.required_staff_count} staff members and already has ${shift.assigned_staff.length} assigned`
-      });
-    }
-
-    // Check if staff member is already assigned to this shift
-    const isAlreadyAssigned = shift.assigned_staff.some(assignment =>
-      assignment.user_id.toString() === user_id
-    );
-
-    if (isAlreadyAssigned) {
-      return res.status(400).json({
-        error: 'Staff member already assigned',
-        message: 'This staff member is already assigned to this shift'
-      });
-    }
-
-    shift.assignStaff(user_id, note, restExceptionPending ? { rest_exception_status: 'pending' } : {});
+    shift.assignStaff(user_id, note, {
+      rest_exception_status: restExceptionPending ? 'pending' : 'none',
+      hours_cap_exception_status: capExceptionStatus,
+      hours_cap_exception_hours: capExceptionHours
+    });
     await shift.save();
+
+    if (capExceptionStatus === 'pending') {
+      const staffUser = await User.findById(user_id).select('name email role');
+      notifyAdminsHoursCapRequested(shift, staffUser, capExceptionHours, capPolicy.fulltime_hours)
+        .catch((error) => console.error('Failed to notify admins of hours-cap request:', error));
+    }
 
     const payload = shift.toObject({ virtuals: true });
     payload.rest_exception_pending = restExceptionPending;
+    payload.hours_cap_exception_pending = capExceptionStatus === 'pending';
     if (isOneToOne(shift)) {
       payload.covered_by_background = await isCoveredByBackground(shift, user_id);
     }
@@ -580,22 +703,48 @@ router.post('/:id/assign', async (req, res) => {
   }
 });
 
+// Approve a flagged assignment: set `field` to 'confirmed' and keep the staff member on it.
+async function confirmFlagged(field, req, res) {
+  const shift = await Shift.findById(req.params.id);
+  if (!shift) {
+    return res.status(404).json({ error: 'Shift not found' });
+  }
+  const assignment = shift.assigned_staff.find(
+    (a) => a.user_id.toString() === String(req.params.userId)
+  );
+  if (!assignment) {
+    return res.status(404).json({ error: 'Staff member is not assigned to this shift' });
+  }
+  assignment[field] = 'confirmed';
+  await shift.save();
+  res.json(shift);
+}
+
+// Reject a flagged assignment: un-assign the staff member.
+async function removeFlagged(req, res) {
+  const shift = await Shift.findById(req.params.id);
+  if (!shift) {
+    return res.status(404).json({ error: 'Shift not found' });
+  }
+  if (isOneToOne(shift) && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
+  }
+  try {
+    shift.removeStaff(req.params.userId);
+  } catch (error) {
+    if (error.message && error.message.includes('not assigned')) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
+  }
+  await shift.save();
+  res.json(shift);
+}
+
 // Confirm a pending rest-exception: the admin accepts the reduced rest gap and clears the flag.
 router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
-    const shift = await Shift.findById(req.params.id);
-    if (!shift) {
-      return res.status(404).json({ error: 'Shift not found' });
-    }
-    const assignment = shift.assigned_staff.find(
-      (a) => a.user_id.toString() === String(req.params.userId)
-    );
-    if (!assignment) {
-      return res.status(404).json({ error: 'Staff member is not assigned to this shift' });
-    }
-    assignment.rest_exception_status = 'confirmed';
-    await shift.save();
-    res.json(shift);
+    await confirmFlagged('rest_exception_status', req, res);
   } catch (error) {
     console.error('Error confirming rest exception:', error);
     res.status(500).json({ error: 'Failed to confirm rest exception' });
@@ -605,23 +754,30 @@ router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_wo
 // Remove a rest-exception assignment: the admin rejects it and un-assigns the staff member.
 router.post('/:id/rest-exception/:userId/remove', requireRole(['admin', 'key_worker']), async (req, res) => {
   try {
-    const shift = await Shift.findById(req.params.id);
-    if (!shift) {
-      return res.status(404).json({ error: 'Shift not found' });
-    }
-    if (isOneToOne(shift) && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
-    }
-
-    shift.removeStaff(req.params.userId);
-    await shift.save();
-    res.json(shift);
+    await removeFlagged(req, res);
   } catch (error) {
-    if (error.message && error.message.includes('not assigned')) {
-      return res.status(404).json({ error: error.message });
-    }
     console.error('Error removing rest exception:', error);
     res.status(500).json({ error: 'Failed to remove rest exception' });
+  }
+});
+
+// Approve a weekly-hours request: the staff member keeps the shift above the full-time cap.
+router.post('/:id/hours-cap-exception/:userId/confirm', requireCapApprover, async (req, res) => {
+  try {
+    await confirmFlagged('hours_cap_exception_status', req, res);
+  } catch (error) {
+    console.error('Error confirming hours-cap exception:', error);
+    res.status(500).json({ error: 'Failed to approve weekly hours request' });
+  }
+});
+
+// Decline a weekly-hours request: un-assign the staff member.
+router.post('/:id/hours-cap-exception/:userId/remove', requireCapApprover, async (req, res) => {
+  try {
+    await removeFlagged(req, res);
+  } catch (error) {
+    console.error('Error removing hours-cap exception:', error);
+    res.status(500).json({ error: 'Failed to decline weekly hours request' });
   }
 });
 
@@ -650,6 +806,14 @@ router.post('/:id/clock-in', async (req, res) => {
 
     if (assignment.clock_in_time) {
       return res.status(400).json({ error: 'Already clocked in to this shift' });
+    }
+
+    if (Shift.isAwaitingApproval(assignment)) {
+      return res.status(409).json({
+        error: 'This shift is awaiting admin approval',
+        message: 'You can clock in once an admin approves this shift.',
+        pending_approval: true
+      });
     }
 
     // A 1-to-1 inside the staff member's own background shift inherits that shift's

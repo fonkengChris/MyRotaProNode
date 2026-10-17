@@ -1,8 +1,9 @@
 const TimeOffRequest = require('../models/TimeOffRequest');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
-const ConstraintWeights = require('../models/ConstraintWeights');
-const { getShiftHourBreakdown, restHoursBetween } = require('../utils/shiftHours');
+const SolverSettings = require('../models/SolverSettings');
+const { restHoursBetween, paidHoursAfterBreak, computeBreakDeduction } = require('../utils/shiftHours');
+const Home = require('../models/Home');
 const {
   isOneToOne,
   shiftWindow,
@@ -10,9 +11,10 @@ const {
   extraRosteredHours,
 } = require('../utils/oneToOne');
 
-// Minimum rest gap (hours) required between two of a staff member's shifts. Below this an
-// admin may override, and a support worker self-selecting is assigned but flagged for review.
-const MIN_REST_HOURS = 8;
+// Default minimum rest gap (hours) between two of a staff member's shifts. The live value is
+// SolverSettings.min_rest_hours (admin-editable). Below it an admin may override, and a support
+// worker self-selecting is assigned but flagged for review.
+const MIN_REST_HOURS = SolverSettings.DEFAULTS.min_rest_hours;
 
 // Conflict types an admin may override at assignment time. `overlapping_shift` is deliberately
 // excluded — same-time double-booking is always blocked.
@@ -86,7 +88,10 @@ class SchedulingConflictService {
     }
   }
 
-  /** The calendar dates one day either side of `dateStr` (YYYY-MM-DD), plus the day itself. */
+  /**
+   * The calendar dates two days either side of `dateStr` (YYYY-MM-DD), plus the day itself.
+   * Two days covers any rest gap up to the 24h maximum, including overnight shifts.
+   */
   static _restWindowDates(dateStr) {
     const [y, m, d] = dateStr.split('-').map(Number);
     const fmt = (dt) => {
@@ -95,9 +100,7 @@ class SchedulingConflictService {
       const dd = String(dt.getDate()).padStart(2, '0');
       return `${yy}-${mm}-${dd}`;
     };
-    const prev = new Date(y, m - 1, d - 1);
-    const next = new Date(y, m - 1, d + 1);
-    return [fmt(prev), dateStr, fmt(next)];
+    return [-2, -1, 0, 1, 2].map((offset) => fmt(new Date(y, m - 1, d + offset)));
   }
 
   /**
@@ -112,14 +115,13 @@ class SchedulingConflictService {
    * @param {string} shiftStartTime - Shift start time in HH:MM format
    * @param {string} shiftEndTime - Shift end time in HH:MM format
    * @param {object} [options]
-   * @param {string} [options.requesterRole] - Role of user making the assignment (required to exceed full-time weekly cap)
    * @param {string} [options.shiftType] - shift_type of the shift being assigned (for paid-hours / sleep-in rules)
    * @param {string} [options.shiftId] - id of the shift being assigned (excluded from the user's existing shifts)
+   * @param {string} [options.homeId] - home of the shift being assigned (its break policy applies to weekly hours)
    * @param {boolean} [options.override] - When true, suppress overridable conflicts (only overlap can still block)
    * @returns {Promise<Object>} Conflict information
    */
   static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime, options = {}) {
-    const requesterRole = options.requesterRole;
     const shiftType = options.shiftType;
     const override = !!options.override;
     try {
@@ -136,6 +138,7 @@ class SchedulingConflictService {
         start_time: shiftStartTime,
         end_time: shiftEndTime,
         shift_type: shiftType,
+        home_id: options.homeId,
       };
       const candidateWindow = shiftWindow(candidate);
       const overlappingShifts = candidateWindow
@@ -193,7 +196,11 @@ class SchedulingConflictService {
         });
       }
 
-      // Fewer than MIN_REST_HOURS between this shift and an adjacent-day shift.
+      // Org-wide rules: minimum rest and the full-time weekly cap.
+      const solverSettings = await SolverSettings.getSettings();
+      const minRestHours = solverSettings.min_rest_hours;
+
+      // Fewer than minRestHours between this shift and an adjacent-day shift.
       const nearbyShifts = await Shift.find({
         date: { $in: this._restWindowDates(shiftDate) },
         'assigned_staff.user_id': userId
@@ -205,41 +212,54 @@ class SchedulingConflictService {
         // Ignore overlaps (rest <= 0): those are handled by the overlap check above.
         if (rest > 0 && rest < minRest) minRest = rest;
       }
-      if (minRest < MIN_REST_HOURS) {
+      if (minRest < minRestHours) {
         overridableConflicts.push({
           conflictType: 'insufficient_rest',
           conflicts: [],
-          message: `Only ${minRest.toFixed(1)}h rest before/after an adjacent shift (minimum ${MIN_REST_HOURS}h)`,
-          details: { rest_hours: Math.round(minRest * 10) / 10, min_rest_hours: MIN_REST_HOURS }
+          message: `Only ${minRest.toFixed(1)}h rest before/after an adjacent shift (minimum ${minRestHours}h)`,
+          details: { rest_hours: Math.round(minRest * 10) / 10, min_rest_hours: minRestHours }
         });
       }
 
-      // Full-time staff weekly cap (default 48h); exceeding requires admin or key_worker.
+      // Full-time staff weekly cap (default 48 paid hours after breaks). Reported for every
+      // requester: approvers (default admin only) confirm it as an override, and staff
+      // self-selecting are held pending approval (see routes/shifts.js).
       const staff = await User.findById(userId).select('type').lean();
       if (staff && staff.type === 'fulltime') {
-        const policy = await ConstraintWeights.getFulltimeWeeklyHoursPolicy();
+        const policy = {
+          capHours: solverSettings.manual_assign_cap.fulltime_hours,
+          approverRoles: solverSettings.manual_assign_cap.approver_roles
+        };
         const week = this._weekRangeMondayToSunday(shiftDate);
         const weekShifts = await Shift.find({
           date: { $gte: week.start, $lte: week.end },
           'assigned_staff.user_id': userId,
           ...(options.shiftId ? { _id: { $ne: options.shiftId } } : {})
-        }).select('start_time end_time date shift_type');
+        }).select('start_time end_time date shift_type home_id');
 
         const weekWithCandidate = [...weekShifts, candidate];
-        const paidOf = (s) => getShiftHourBreakdown(s).paid_work_hours;
-        const weeklyHours = weekWithCandidate.reduce(
-          (sum, s) => sum + contributionHours(s, weekWithCandidate, paidOf),
-          0
-        );
+        const homeIds = [...new Set(weekWithCandidate.map((s) => String(s.home_id)).filter((id) => id && id !== 'undefined'))];
+        const homes = homeIds.length ? await Home.find({ _id: { $in: homeIds } }).select('break_policy').lean() : [];
+        const breakPolicyByHome = new Map(homes.map((h) => [String(h._id), h.break_policy]));
+        const policyOf = (s) => breakPolicyByHome.get(String(s.home_id));
+        // Hours after each home's unpaid break deduction (as payroll pays them).
+        const weeklyHours = weekWithCandidate.reduce((sum, s) => {
+          if (isOneToOne(s)) {
+            const extra = extraRosteredHours(s, weekWithCandidate);
+            return sum + Math.max(0, extra - computeBreakDeduction(extra, policyOf(s)));
+          }
+          return sum + paidHoursAfterBreak(s, policyOf(s));
+        }, 0);
 
-        if (!ConstraintWeights.canAuthorizeFulltimeOverWeeklyCap(requesterRole, weeklyHours, policy)) {
+        if (weeklyHours > policy.capHours) {
           overridableConflicts.push({
             conflictType: 'fulltime_weekly_cap_exceeded',
             conflicts: [],
-            message: `Full-time weekly hours would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may assign above this limit`,
+            message: `Full-time weekly paid hours (after breaks) would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may approve going above this limit`,
             details: {
               projected_weekly_hours: Math.round(weeklyHours * 10) / 10,
               cap_hours: policy.capHours,
+              approver_roles: policy.approverRoles,
               week_start: week.start,
               week_end: week.end
             }

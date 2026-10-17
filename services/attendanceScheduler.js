@@ -79,6 +79,7 @@ async function runClockInCheck(now) {
       if (assignment.status === 'declined') continue;
       if (assignment.clock_in_time) continue; // already clocked in
       if (assignment.attendance_status === 'missed') continue; // already resolved
+      if (Shift.isAwaitingApproval(assignment)) continue; // can't clock in until approved
 
       const staffUser = assignment.user_id && assignment.user_id._id ? assignment.user_id : null;
 

@@ -83,6 +83,19 @@ const shiftSchema = new mongoose.Schema({
       enum: ['none', 'pending', 'confirmed'],
       default: 'none'
     },
+    // Full-time weekly-cap review: 'pending' when a staff member self-selects a shift that
+    // takes them over the cap (SolverSettings.manual_assign_cap) — held for them until an
+    // approver confirms or removes it. 'confirmed' also records an approver assigning
+    // over the cap directly. `hours_cap_exception_hours` is the projected weekly total.
+    hours_cap_exception_status: {
+      type: String,
+      enum: ['none', 'pending', 'confirmed'],
+      default: 'none'
+    },
+    hours_cap_exception_hours: {
+      type: Number,
+      default: null
+    },
     // Attendance tracking (clock-in / clock-out)
     clock_in_time: {
       type: Date,
@@ -143,6 +156,7 @@ shiftSchema.index({ date: 1 });
 shiftSchema.index({ 'assigned_staff.user_id': 1 });
 // Supports the admin rest-exception review queue (pending/confirmed flagged assignments).
 shiftSchema.index({ 'assigned_staff.rest_exception_status': 1 });
+shiftSchema.index({ 'assigned_staff.hours_cap_exception_status': 1 });
 shiftSchema.index({ is_active: 1 });
 shiftSchema.index({ service_user_id: 1, date: 1 });
 // Supports the attendance scheduler scan (today's shifts still awaiting clock-in).
@@ -249,6 +263,15 @@ shiftSchema.methods.isStaffAvailable = function(staffId, availabilityData) {
 };
 
 // Method to assign staff member
+// Whether an assignment is held pending admin review (short rest or over the weekly cap).
+// Pending assignments can't be clocked into and get no attendance reminders until approved.
+shiftSchema.statics.isAwaitingApproval = function(assignment) {
+  return !!assignment && (
+    assignment.rest_exception_status === 'pending' ||
+    assignment.hours_cap_exception_status === 'pending'
+  );
+};
+
 shiftSchema.methods.assignStaff = function(staffId, note = '', opts = {}) {
   // Check if staff is already assigned
   const existingAssignment = this.assigned_staff.find(assignment =>
@@ -269,7 +292,9 @@ shiftSchema.methods.assignStaff = function(staffId, note = '', opts = {}) {
     status: 'assigned',
     assigned_at: new Date(),
     note,
-    rest_exception_status: opts.rest_exception_status || 'none'
+    rest_exception_status: opts.rest_exception_status || 'none',
+    hours_cap_exception_status: opts.hours_cap_exception_status || 'none',
+    hours_cap_exception_hours: opts.hours_cap_exception_hours ?? null
   });
 
   return this;

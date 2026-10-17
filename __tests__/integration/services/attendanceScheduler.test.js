@@ -77,6 +77,20 @@ describe('attendanceScheduler.runAttendanceCheck', () => {
     expect(await Message.find({ to_user_id: admin._id })).toHaveLength(1);
   });
 
+  test('skips assignments still awaiting admin approval', async () => {
+    const shift = await makeLateShift({
+      home, worker, minutesAgo: 16,
+      extra: { assigned_staff: [{ user_id: worker._id, hours_cap_exception_status: 'pending' }] },
+    });
+
+    await runAttendanceCheck();
+
+    expect(await Message.find({ to_user_id: worker._id })).toHaveLength(0);
+    expect(await Message.find({ to_user_id: manager._id })).toHaveLength(0);
+    const updated = await Shift.findById(shift._id);
+    expect(updated.assigned_staff[0].attendance_status).toBe('not_started');
+  });
+
   test('does not notify once the staff member has clocked in', async () => {
     const shift = await makeLateShift({ home, worker, minutesAgo: 16 });
     shift.assigned_staff[0].clock_in_time = new Date();

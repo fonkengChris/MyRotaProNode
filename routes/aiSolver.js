@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const AISolver = require('../services/aiSolver');
+const SolverSettings = require('../models/SolverSettings');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -304,98 +305,108 @@ router.post('/validate-rota', [
   }
 });
 
+// Rules the solver always applies; shown read-only on the admin page.
+const LOCKED_RULES = [
+  { key: 'no_double_booking', name: 'No double booking', description: 'Staff are never auto-assigned to overlapping shifts.' },
+  { key: 'respect_time_off', name: 'Respect approved time off', description: 'Staff on approved leave are never auto-assigned.' },
+  { key: 'respect_unavailability', name: 'Respect unavailability', description: 'Staff who marked a day as unavailable are never auto-assigned that day.' },
+  { key: 'home_access', name: 'Home access', description: 'Staff are only assigned to homes they are linked to.' },
+  { key: 'one_to_one_manual', name: '1-to-1 shifts are manual', description: '1-to-1 shifts are created and assigned by admins only.' }
+];
+
+// Copy only the keys that exist in `shape` (DEFAULTS), so unknown or system fields
+// (_id, updated_by, timestamps) in the request body are ignored.
+function pickKnown(input, shape) {
+  const out = {};
+  if (!input || typeof input !== 'object') return out;
+  for (const key of Object.keys(shape)) {
+    if (!(key in input)) continue;
+    const ref = shape[key];
+    const val = input[key];
+    if (ref && typeof ref === 'object' && !Array.isArray(ref)) {
+      out[key] = pickKnown(val, ref);
+    } else {
+      out[key] = val;
+    }
+  }
+  return out;
+}
+
+function deepMerge(base, patch) {
+  const out = { ...base };
+  for (const [key, val] of Object.entries(patch)) {
+    out[key] = val && typeof val === 'object' && !Array.isArray(val) && base[key] && typeof base[key] === 'object'
+      ? deepMerge(base[key], val)
+      : val;
+  }
+  return out;
+}
+
+function constraintsPayload(settings) {
+  return {
+    settings,
+    defaults: SolverSettings.DEFAULTS,
+    locked_rules: LOCKED_RULES,
+    roles: SolverSettings.ROLES
+  };
+}
+
 // @route   GET /api/ai-solver/constraints
-// @desc    Get available constraints and their weights
-// @access  Private (Managers and Admins only)
+// @desc    Get the rules the AI solver uses (org-wide)
+// @access  Private (Admins and key workers)
 router.get('/constraints', [
   authenticateToken,
   requireRole(['admin', 'key_worker'])
 ], async (req, res) => {
   try {
-    const { home_id, service_id } = req.query;
-    
-    // TODO: Load constraints from database
-    const constraints = {
-      hard_constraints: [
-        {
-          id: 'constraint1',
-          name: 'No Double Booking',
-          description: 'Staff cannot be assigned to overlapping shifts',
-          weight: 1000,
-          is_active: true
-        },
-        {
-          id: 'constraint2',
-          name: 'Respect Time Off',
-          description: 'Staff cannot be assigned during approved time off',
-          weight: 1000,
-          is_active: true
-        }
-      ],
-      soft_constraints: [
-        {
-          id: 'constraint3',
-          name: 'Preferred Shift Types',
-          description: 'Respect staff shift type preferences',
-          weight: 20,
-          is_active: true
-        },
-        {
-          id: 'constraint4',
-          name: 'Even Distribution',
-          description: 'Distribute shifts evenly among staff',
-          weight: 25,
-          is_active: true
-        }
-      ]
-    };
-
-    res.json({
-      constraints,
-      message: 'Constraints retrieved successfully'
-    });
-
+    const settings = await SolverSettings.getSettings();
+    res.json(constraintsPayload(settings));
   } catch (error) {
     console.error('AI Solver constraints error:', error);
-    res.status(500).json({ 
-      error: 'Server error while retrieving constraints' 
-    });
+    res.status(500).json({ error: 'Server error while retrieving constraints' });
   }
 });
 
-// @route   POST /api/ai-solver/update-constraints
-// @desc    Update constraint weights
+// @route   PUT /api/ai-solver/constraints
+// @desc    Update the rules the AI solver uses
 // @access  Private (Admins only)
-router.post('/update-constraints', [
+router.put('/constraints', [
   authenticateToken,
-  requireRole(['admin']),
-  body('constraints').isArray().withMessage('Constraints array is required')
+  requireRole(['admin'])
 ], async (req, res) => {
   try {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: errors.array() 
+    const settings = await SolverSettings.getSettings();
+    const current = settings.toObject();
+    const patch = pickKnown(req.body, SolverSettings.DEFAULTS);
+    settings.set(deepMerge(current, patch));
+    settings.updated_by = req.user._id;
+    await settings.save();
+    res.json(constraintsPayload(settings));
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: Object.values(error.errors).map((e) => ({ path: e.path, msg: e.message }))
       });
     }
-
-    const { constraints } = req.body;
-
-    // TODO: Implement constraint update logic
-    // This would update constraint weights in the database
-
-    res.json({
-      message: 'Constraints updated successfully',
-      updated_count: constraints.length
-    });
-
-  } catch (error) {
     console.error('AI Solver constraint update error:', error);
-    res.status(500).json({ 
-      error: 'Server error while updating constraints' 
-    });
+    res.status(500).json({ error: 'Server error while updating constraints' });
+  }
+});
+
+// @route   POST /api/ai-solver/constraints/reset
+// @desc    Restore every solver rule to its default
+// @access  Private (Admins only)
+router.post('/constraints/reset', [
+  authenticateToken,
+  requireRole(['admin'])
+], async (req, res) => {
+  try {
+    const settings = await SolverSettings.resetToDefaults(req.user._id);
+    res.json(constraintsPayload(settings));
+  } catch (error) {
+    console.error('AI Solver constraint reset error:', error);
+    res.status(500).json({ error: 'Server error while resetting constraints' });
   }
 });
 

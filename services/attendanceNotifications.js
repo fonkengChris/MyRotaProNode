@@ -139,7 +139,22 @@ async function notifyAdminsOvertimeRequested(shift, staffUser, minutes, reason) 
   });
 }
 
+/** Tell admins a staff member self-selected a shift that takes them over the weekly cap. */
+async function notifyAdminsHoursCapRequested(shift, staffUser, projectedHours, capHours) {
+  const label = homeLabel(shift);
+  const staffName = staffUser && staffUser.name ? staffUser.name : 'A staff member';
+  const hours = typeof projectedHours === 'number' ? `${projectedHours}h` : 'more than the limit';
+  const body = `${staffName} selected the ${shift.start_time}–${shift.end_time} shift at ${label} (${shift.date}), taking their week to ${hours} paid (limit ${capHours}h). The shift is held for them until you approve or remove it on the dashboard.`;
+
+  await notifyAdmins(staffUser, body, {
+    title: `Weekly hours approval — ${staffName}`,
+    body,
+    tag: `hours-cap-${shift._id}-${staffUser ? staffUser._id : ''}`,
+  });
+}
+
 module.exports = {
+  notifyAdminsHoursCapRequested,
   notifyLateStaff,
   notifyManagement,
   notifyAdminsClockOutOverdue,

@@ -315,6 +315,7 @@ constraintWeightsSchema.statics.getViolationMessage = function(constraint, userT
 
 /**
  * Policy for full-time weekly hours: cap and which roles may assign shifts that exceed it.
+ * Legacy and unused: the live policy is SolverSettings.manual_assign_cap.
  */
 constraintWeightsSchema.statics.getFulltimeWeeklyHoursPolicy = async function() {
   const doc = await this.findOne({ is_active: true, constraint_type: 'max_hours_per_week' })

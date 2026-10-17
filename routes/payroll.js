@@ -10,6 +10,7 @@ const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const {
   getShiftHourBreakdown,
   workedHourBreakdown,
+  computeBreakDeduction,
   effectiveWorkedWindow,
 } = require('../utils/shiftHours');
 const {
@@ -74,35 +75,6 @@ function requireDateRange(req, res) {
   return { startDate, endDate };
 }
 
-// Fallback break-deduction bands, used when a home has no configured policy (e.g.
-// documents created before break_policy existed). Mirrors the historical hard-coded rule.
-const DEFAULT_BREAK_TIERS = [
-  { min_hours: 8, deduction_hours: 0.5 },
-  { min_hours: 12, deduction_hours: 1 },
-];
-
-/**
- * Hours of unpaid break to deduct from a shift's paid work hours, per the home's
- * configurable break policy. The highest tier whose `min_hours` threshold is met by
- * `paidWorkHours` wins. A policy with `enabled === false` deducts nothing.
- */
-function computeBreakDeduction(paidWorkHours, breakPolicy) {
-  if (breakPolicy && breakPolicy.enabled === false) return 0;
-  const tiers =
-    breakPolicy && Array.isArray(breakPolicy.tiers) && breakPolicy.tiers.length
-      ? breakPolicy.tiers
-      : DEFAULT_BREAK_TIERS;
-
-  let deduction = 0;
-  let bestThreshold = -1;
-  for (const tier of tiers) {
-    if (paidWorkHours >= tier.min_hours && tier.min_hours > bestThreshold) {
-      bestThreshold = tier.min_hours;
-      deduction = tier.deduction_hours;
-    }
-  }
-  return deduction;
-}
 
 function normalizeBoundedNumber(value, fallback, max) {
   const parsed = Number(value);

@@ -173,6 +173,45 @@ function restHoursBetween(shiftA, shiftB) {
   return (later.start - earlier.end) / 3600000;
 }
 
+// Fallback break-deduction bands, used when a home has no configured policy (e.g.
+// documents created before break_policy existed). Mirrors the historical hard-coded rule.
+const DEFAULT_BREAK_TIERS = [
+  { min_hours: 8, deduction_hours: 0.5 },
+  { min_hours: 12, deduction_hours: 1 },
+];
+
+/**
+ * Hours of unpaid break to deduct from a shift's paid work hours, per the home's
+ * configurable break policy. The highest tier whose `min_hours` threshold is met by
+ * `paidWorkHours` wins. A policy with `enabled === false` deducts nothing.
+ */
+function computeBreakDeduction(paidWorkHours, breakPolicy) {
+  if (breakPolicy && breakPolicy.enabled === false) return 0;
+  const tiers =
+    breakPolicy && Array.isArray(breakPolicy.tiers) && breakPolicy.tiers.length
+      ? breakPolicy.tiers
+      : DEFAULT_BREAK_TIERS;
+
+  let deduction = 0;
+  let bestThreshold = -1;
+  for (const tier of tiers) {
+    if (paidWorkHours >= tier.min_hours && tier.min_hours > bestThreshold) {
+      bestThreshold = tier.min_hours;
+      deduction = tier.deduction_hours;
+    }
+  }
+  return deduction;
+}
+
+/**
+ * Paid work hours for a rostered shift after the home's unpaid break deduction — the
+ * figure weekly-hours limits are measured on (solver hard caps and the manual full-time cap).
+ */
+function paidHoursAfterBreak(shift, breakPolicy) {
+  const paid = getShiftHourBreakdown(shift).paid_work_hours;
+  return Math.max(0, paid - computeBreakDeduction(paid, breakPolicy));
+}
+
 /**
  * @param {object} shift - { shift_type, start_time, end_time, duration_hours? }
  * @param {number} [overrideDurationHours] - when provided, replaces the rostered duration
@@ -225,6 +264,9 @@ module.exports = {
   nightSleepHours,
   restHoursBetween,
   getShiftHourBreakdown,
+  DEFAULT_BREAK_TIERS,
+  computeBreakDeduction,
+  paidHoursAfterBreak,
   actualDurationHours,
   clampedWorkedDurationHours,
   effectiveWorkedWindow,
