@@ -8,6 +8,10 @@ const mongoose = require('mongoose');
 // DEFAULTS mirror the values that were hardcoded in the solver before these became
 // editable, except the full-time weekly limit: 48 paid hours (after break deductions) for
 // both the solver and manual assignment, above which only an admin may assign.
+//
+// leave_limit isn't a solver rule but lives here so admins edit it alongside them: the
+// most staff from one home allowed on approved leave on the same day before an admin
+// override is needed (services/timeOffService.js).
 
 const ROLES = ['admin', 'key_worker', 'senior_staff', 'support_worker'];
 const EMPLOYMENT_TYPES = ['fulltime', 'parttime', 'bank'];
@@ -62,6 +66,9 @@ const DEFAULTS = {
     fulltime_max_per_head: 20,
     parttime_share: 0.25,
     parttime_max_per_head: 8
+  },
+  leave_limit: {
+    max_staff_per_home: 3
   }
 };
 
@@ -117,6 +124,10 @@ const solverSettingsSchema = new mongoose.Schema({
     fulltime_max_per_head: num(0, 100),
     parttime_share: num(0, 1),
     parttime_max_per_head: num(0, 100)
+  },
+  // Defaulted so settings documents saved before this field existed pick it up on load.
+  leave_limit: {
+    max_staff_per_home: { ...num(1, 100), default: DEFAULTS.leave_limit.max_staff_per_home }
   },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {

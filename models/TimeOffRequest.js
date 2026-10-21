@@ -46,6 +46,21 @@ const timeOffRequestSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Set when, at submission, granting this leave would put more than the per-home limit
+  // of staff on leave at once (see services/timeOffService.js). Rechecked on approval.
+  home_leave_limit_warning: {
+    home_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Home' },
+    home_name: String,
+    date: String,
+    staff_on_leave: { type: [String], default: undefined },
+    limit: Number,
+    message: String
+  },
+  // Recorded when an admin approves leave over the per-home limit.
+  home_leave_limit_override: {
+    approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    approved_at: Date
+  },
   submitted_at: {
     type: Date,
     default: Date.now
@@ -79,6 +94,8 @@ timeOffRequestSchema.virtual('publicInfo').get(function() {
     approved_at: this.approved_at,
     denial_reason: this.denial_reason,
     is_urgent: this.is_urgent,
+    home_leave_limit_warning: this.home_leave_limit_warning,
+    home_leave_limit_override: this.home_leave_limit_override,
     submitted_at: this.submitted_at
   };
 });

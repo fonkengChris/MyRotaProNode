@@ -1,12 +1,35 @@
 const express = require('express');
 const router = express.Router();
 const TimeOffRequest = require('../models/TimeOffRequest');
-const { requireRole, requireOwnershipOrPermission } = require('../middleware/auth');
+const { requireRole } = require('../middleware/auth');
 const {
   findTimetableConflictForLeave,
   buildAutoDenialReason,
-  syncAvailabilityForApprovedLeave
+  syncAvailabilityForApprovedLeave,
+  releaseAvailabilityForCancelledLeave,
+  findHomeLeaveLimitConflict,
+  buildHomeLeaveLimitMessage
 } = require('../services/timeOffService');
+
+const APPROVER_ROLES = ['admin', 'key_worker', 'senior_staff'];
+
+// Fields staff may set when submitting or editing a request. Status, approval and
+// limit-override fields only change through the approve/deny endpoints.
+const EDITABLE_FIELDS = ['start_date', 'end_date', 'reason', 'request_type', 'is_urgent'];
+
+const pickEditable = (body) =>
+  Object.fromEntries(EDITABLE_FIELDS.filter((f) => body?.[f] !== undefined).map((f) => [f, body[f]]));
+
+const isOwner = (request, user) => request.user_id?.toString() === user._id.toString();
+
+async function applyHomeLeaveLimitWarning(request) {
+  const limitConflict = await findHomeLeaveLimitConflict(
+    request.user_id, request.start_date, request.end_date, request.request_type, request._id
+  );
+  request.home_leave_limit_warning = limitConflict
+    ? { ...limitConflict, message: buildHomeLeaveLimitMessage(limitConflict) }
+    : undefined;
+}
 
 // Get all time-off requests
 router.get('/', async (req, res) => {
@@ -73,11 +96,17 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'user_id, start_date, and end_date are required' });
     }
 
+    if (String(user_id) !== req.user._id.toString() && !APPROVER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'You can only request time off for yourself' });
+    }
+
+    const fields = { ...pickEditable(req.body), user_id };
+
     const conflict = await findTimetableConflictForLeave(user_id, start_date, end_date);
 
     if (conflict) {
       const request = new TimeOffRequest({
-        ...req.body,
+        ...fields,
         status: 'denied',
         denial_reason: buildAutoDenialReason(conflict),
         approved_at: new Date()
@@ -92,7 +121,10 @@ router.post('/', async (req, res) => {
       });
     }
 
-    const request = new TimeOffRequest(req.body);
+    // Over the per-home limit is a soft constraint: the request is still submitted, but
+    // flagged so that only an admin can approve it.
+    const request = new TimeOffRequest(fields);
+    await applyHomeLeaveLimitWarning(request);
     await request.save();
     res.status(201).json(request);
   } catch (error) {
@@ -104,31 +136,59 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update time-off request
-router.put('/:id', requireOwnershipOrPermission, async (req, res) => {
+// Update time-off request (pending only; the requester or an approver). Status can't be
+// changed here, so edits can't skip the approval checks.
+router.put('/:id', async (req, res) => {
   try {
-    const request = await TimeOffRequest.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-    
+    const request = await TimeOffRequest.findById(req.params.id);
+
     if (!request) {
       return res.status(404).json({ error: 'Time-off request not found' });
     }
-    
+    if (!isOwner(request, req.user) && !APPROVER_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'You can only edit your own time-off requests' });
+    }
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: `Only pending requests can be edited; this one is ${request.status}` });
+    }
+
+    request.set(pickEditable(req.body));
+
+    const conflict = await findTimetableConflictForLeave(request.user_id, request.start_date, request.end_date);
+    if (conflict) {
+      return res.status(400).json({
+        error: 'Cannot request leave for scheduled dates',
+        details: buildAutoDenialReason(conflict)
+      });
+    }
+
+    await applyHomeLeaveLimitWarning(request);
+    await request.save();
     res.json(request);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update time-off request' });
+    res.status(400).json({ error: 'Failed to update time-off request', details: error.message });
   }
 });
 
-// Delete time-off request
-router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
+// Delete time-off request (requesters may withdraw their own pending requests; approvers
+// may delete any)
+router.delete('/:id', async (req, res) => {
   try {
-    const request = await TimeOffRequest.findByIdAndDelete(req.params.id);
+    const request = await TimeOffRequest.findById(req.params.id);
     if (!request) {
       return res.status(404).json({ error: 'Time-off request not found' });
+    }
+    if (!APPROVER_ROLES.includes(req.user.role)) {
+      if (!isOwner(request, req.user)) {
+        return res.status(403).json({ error: 'You can only delete your own time-off requests' });
+      }
+      if (request.status !== 'pending') {
+        return res.status(400).json({ error: 'Only pending requests can be withdrawn; ask a manager to cancel approved leave' });
+      }
+    }
+    await request.deleteOne();
+    if (request.status === 'approved') {
+      await releaseAvailabilityForCancelledLeave(request);
     }
     res.json({ message: 'Time-off request deleted successfully' });
   } catch (error) {
@@ -137,7 +197,7 @@ router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
 });
 
 // Approve time-off request
-router.post('/:id/approve', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.post('/:id/approve', requireRole(APPROVER_ROLES), async (req, res) => {
   try {
     console.log('Approving time-off request:', req.params.id, 'by user:', req.user._id);
     
@@ -171,6 +231,37 @@ router.post('/:id/approve', requireRole(['admin', 'key_worker', 'senior_staff'])
       });
     }
 
+    // Recheck the per-home limit now: other leave may have been approved since submission.
+    const limitConflict = await findHomeLeaveLimitConflict(
+      request.user_id,
+      request.start_date,
+      request.end_date,
+      request.request_type,
+      request._id
+    );
+
+    if (limitConflict) {
+      const message = buildHomeLeaveLimitMessage(limitConflict);
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({
+          error: 'Admin permission required',
+          code: 'HOME_LEAVE_LIMIT',
+          details: `${message} Ask an admin to approve this request.`,
+          conflict: limitConflict
+        });
+      }
+      if (req.body?.override_home_leave_limit !== true) {
+        return res.status(409).json({
+          error: 'Home leave limit exceeded',
+          code: 'HOME_LEAVE_LIMIT',
+          details: message,
+          conflict: limitConflict
+        });
+      }
+      request.home_leave_limit_warning = { ...limitConflict, message };
+      request.home_leave_limit_override = { approved_by: req.user._id, approved_at: new Date() };
+    }
+
     request.approve(req.user._id);
     await request.save();
 
@@ -197,7 +288,7 @@ router.post('/:id/approve', requireRole(['admin', 'key_worker', 'senior_staff'])
 });
 
 // Deny time-off request
-router.post('/:id/deny', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.post('/:id/deny', requireRole(APPROVER_ROLES), async (req, res) => {
   try {
     console.log('Denying time-off request:', req.params.id, 'by user:', req.user._id, 'reason:', req.body.reason);
     
