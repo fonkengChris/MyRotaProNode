@@ -320,6 +320,7 @@ async function buildPayrollRecords({
           total_day_hours: 0,
           total_night_hours: 0,
           total_paid_hours: 0,
+          total_sleep_nights: 0,
           total_sleep_in_pay: 0,
           total_leave_pay: 0,
           total_gross_pay: 0,
@@ -515,6 +516,7 @@ async function buildPayrollRecords({
       acc.total_day_hours += row.day_hours || 0;
       acc.total_night_hours += row.night_hours || 0;
       acc.total_paid_hours += row.paid_hours || 0;
+      acc.total_sleep_nights += row.sleep_night_shifts || 0;
       acc.total_sleep_in_pay += row.sleep_in_pay || 0;
       acc.total_leave_pay += row.leave_pay || 0;
       acc.total_gross_pay += row.gross_pay || 0;
@@ -526,6 +528,7 @@ async function buildPayrollRecords({
       total_day_hours: 0,
       total_night_hours: 0,
       total_paid_hours: 0,
+      total_sleep_nights: 0,
       total_sleep_in_pay: 0,
       total_leave_pay: 0,
       total_gross_pay: 0,
@@ -540,6 +543,7 @@ async function buildPayrollRecords({
       total_day_hours: Number(totals.total_day_hours.toFixed(2)),
       total_night_hours: Number(totals.total_night_hours.toFixed(2)),
       total_paid_hours: Number(totals.total_paid_hours.toFixed(2)),
+      total_sleep_nights: totals.total_sleep_nights,
       total_sleep_in_pay: Number(totals.total_sleep_in_pay.toFixed(2)),
       total_leave_pay: Number(totals.total_leave_pay.toFixed(2)),
       total_gross_pay: Number(totals.total_gross_pay.toFixed(2)),

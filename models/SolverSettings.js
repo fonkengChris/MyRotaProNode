@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { DEFAULT_SLEEP_IN_HOURS, setSleepInHours } = require('../utils/shiftHours');
+const { DEFAULT_SLEEP_IN_HOURS, setSleepInHours, DEFAULT_SLEEP_CAP_HOURS, setSleepCapHours } = require('../utils/shiftHours');
 
 // Company-wide rules the AI solver (services/aiSolver.js) uses to generate rotas and
 // timetables, plus the rest/weekly-cap rules the manual-assignment conflict check
@@ -15,7 +15,8 @@ const { DEFAULT_SLEEP_IN_HOURS, setSleepInHours } = require('../utils/shiftHours
 // override is needed (services/timeOffService.js).
 //
 // sleep_in isn't a solver rule either: it's how many hours at the end of a `night-sleep`
-// shift count as the sleep period (flat allowance, not paid hours) — see utils/shiftHours.js.
+// shift count as the sleep period (flat allowance, not paid hours), and how many hours of work
+// a full sleep period counts as towards weekly hours limits (cap_hours) — see utils/shiftHours.js.
 
 const ROLES = ['admin', 'key_worker', 'senior_staff', 'support_worker'];
 const EMPLOYMENT_TYPES = ['fulltime', 'parttime', 'bank'];
@@ -23,8 +24,12 @@ const EMPLOYMENT_TYPES = ['fulltime', 'parttime', 'bank'];
 const DEFAULTS = {
   auto_assignable_roles: ['support_worker'],
   min_rest_hours: 8,
-  consecutive_days_enabled: false,
+  consecutive_days_enabled: true,
   max_consecutive_days: 6,
+  // Rotation: the most days in a row one person works the same shift (same type and times).
+  // Candidates over it are ranked last, so they only get the shift when nobody else can.
+  same_shift_limit_enabled: true,
+  max_same_shift_in_a_row: 3,
   // Weekly hours rules per employment type, all measured on projected paid hours (after each
   // home's unpaid break deduction) for the week being solved.
   //   hard_max                - never auto-assign beyond this
@@ -75,7 +80,8 @@ const DEFAULTS = {
     max_staff_per_home: 3
   },
   sleep_in: {
-    sleep_hours: DEFAULT_SLEEP_IN_HOURS
+    sleep_hours: DEFAULT_SLEEP_IN_HOURS,
+    cap_hours: DEFAULT_SLEEP_CAP_HOURS
   }
 };
 
@@ -101,8 +107,11 @@ const solverSettingsSchema = new mongoose.Schema({
     validate: { validator: (v) => Array.isArray(v) && v.length > 0, message: 'At least one auto-assignable role is required' }
   },
   min_rest_hours: num(0, 24),
-  consecutive_days_enabled: { type: Boolean, default: false },
+  consecutive_days_enabled: { type: Boolean, default: true },
   max_consecutive_days: num(1, 14),
+  // Defaulted so settings documents saved before these fields existed pick them up on load.
+  same_shift_limit_enabled: { type: Boolean, default: DEFAULTS.same_shift_limit_enabled },
+  max_same_shift_in_a_row: { ...num(1, 14), default: DEFAULTS.max_same_shift_in_a_row },
   hours: {
     fulltime: { type: hoursRuleSchema, required: true },
     parttime: { type: hoursRuleSchema, required: true },
@@ -137,7 +146,8 @@ const solverSettingsSchema = new mongoose.Schema({
     max_staff_per_home: { ...num(1, 100), default: DEFAULTS.leave_limit.max_staff_per_home }
   },
   sleep_in: {
-    sleep_hours: { ...num(1, 24), default: DEFAULTS.sleep_in.sleep_hours }
+    sleep_hours: { ...num(1, 24), default: DEFAULTS.sleep_in.sleep_hours },
+    cap_hours: { ...num(0, 24), default: DEFAULTS.sleep_in.cap_hours }
   },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
@@ -152,9 +162,12 @@ solverSettingsSchema.pre('validate', function (next) {
   next();
 });
 
-// Keep the sleep-in length used by the sync hour helpers (utils/shiftHours.js) in step with
-// the stored setting whenever the document is read or written.
-const syncSleepInHours = (doc) => setSleepInHours(doc?.sleep_in?.sleep_hours);
+// Keep the sleep-in length and cap equivalent used by the sync hour helpers
+// (utils/shiftHours.js) in step with the stored settings whenever the document is read or written.
+const syncSleepInHours = (doc) => {
+  setSleepInHours(doc?.sleep_in?.sleep_hours);
+  setSleepCapHours(doc?.sleep_in?.cap_hours);
+};
 solverSettingsSchema.post('init', syncSleepInHours);
 solverSettingsSchema.post('save', syncSleepInHours);
 

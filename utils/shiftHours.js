@@ -31,6 +31,16 @@ function getSleepInHours() {
   return sleepInHours;
 }
 
+// Work hours a full sleep period counts as towards weekly hours limits (not pay). Synced from
+// SolverSettings.sleep_in.cap_hours the same way as the sleep length above.
+const DEFAULT_SLEEP_CAP_HOURS = 5;
+let sleepCapHours = DEFAULT_SLEEP_CAP_HOURS;
+
+function setSleepCapHours(hours) {
+  const n = Number(hours);
+  sleepCapHours = Number.isFinite(n) && n >= 0 ? n : DEFAULT_SLEEP_CAP_HOURS;
+}
+
 function durationFromTimes(startTime, endTime) {
   if (!startTime || !endTime) return 0;
   const [sh, sm] = startTime.split(':').map(Number);
@@ -232,12 +242,22 @@ function computeBreakDeduction(paidWorkHours, breakPolicy) {
 }
 
 /**
- * Paid work hours for a rostered shift after the home's unpaid break deduction — the
- * figure weekly-hours limits are measured on (solver hard caps and the manual full-time cap).
+ * Paid work hours for a rostered shift after the home's unpaid break deduction. Weekly
+ * hours limits add the sleep period on top: see capHoursAfterBreak.
  */
 function paidHoursAfterBreak(shift, breakPolicy) {
   const paid = getShiftHourBreakdown(shift).paid_work_hours;
   return Math.max(0, paid - computeBreakDeduction(paid, breakPolicy));
+}
+
+/**
+ * Hours a rostered shift counts towards weekly hours limits (solver hard caps and the manual
+ * full-time cap): paid work after breaks, plus the sleep period as `sleepCapHours` of work
+ * time (pro rata when the shift holds less than a full sleep period). Not used for pay.
+ */
+function capHoursAfterBreak(shift, breakPolicy) {
+  const sleep = getShiftHourBreakdown(shift).sleep_in_hours;
+  return paidHoursAfterBreak(shift, breakPolicy) + (sleep / sleepInHours) * sleepCapHours;
 }
 
 /**
@@ -292,6 +312,8 @@ module.exports = {
   DEFAULT_SLEEP_IN_HOURS,
   setSleepInHours,
   getSleepInHours,
+  DEFAULT_SLEEP_CAP_HOURS,
+  setSleepCapHours,
   durationFromTimes,
   nightSleepHours,
   restHoursBetween,
@@ -299,6 +321,7 @@ module.exports = {
   DEFAULT_BREAK_TIERS,
   computeBreakDeduction,
   paidHoursAfterBreak,
+  capHoursAfterBreak,
   actualDurationHours,
   clampedWorkedDurationHours,
   effectiveWorkedWindow,

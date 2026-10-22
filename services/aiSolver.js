@@ -3,7 +3,7 @@ const User = require('../models/User');
 const Shift = require('../models/Shift');
 const Availability = require('../models/Availability');
 const TimeOffRequest = require('../models/TimeOffRequest');
-const { paidHoursAfterBreak, computeBreakDeduction, restHoursBetween } = require('../utils/shiftHours');
+const { paidHoursAfterBreak, capHoursAfterBreak, computeBreakDeduction, restHoursBetween } = require('../utils/shiftHours');
 const Home = require('../models/Home');
 
 // Default roles the AI solver auto-assigns. Admins configure the live list in
@@ -38,6 +38,11 @@ function shiftKeyOf(shift) {
   return (shift._id || shift.id || `${shiftDateYmd(shift)}-${shift.start_time}`).toString();
 }
 
+/** What makes two shifts "the same shift" for the rotation rule: type and times, any home. */
+function shiftSignature(shift) {
+  return `${shift.shift_type}|${shift.start_time}|${shift.end_time}`;
+}
+
 /** Local calendar weekend (Sat/Sun) for YYYY-MM-DD. */
 function isWeekendYmd(ymd) {
   if (!ymd || ymd.length < 10) return false;
@@ -60,6 +65,11 @@ class AISolver {
   /** Paid hours a shift counts towards weekly limits (after the home's break deduction). */
   paidHours(shift) {
     return paidHoursAfterBreak(shift, this.breakPolicyByHome.get(String(shift.home_id)));
+  }
+
+  /** Hours a shift counts towards weekly limits: paid hours plus the sleep-in cap equivalent. */
+  weeklyHours(shift) {
+    return capHoursAfterBreak(shift, this.breakPolicyByHome.get(String(shift.home_id)));
   }
 
   async loadBreakPolicies(shifts) {
@@ -827,7 +837,7 @@ class AISolver {
         shift.assigned_staff.forEach(assignment => {
           const staffId = assignment.user_id.toString();
           if (staffHours[staffId] !== undefined) {
-            staffHours[staffId] += this.paidHours(shift);
+            staffHours[staffId] += this.weeklyHours(shift);
           }
         });
       }
@@ -842,7 +852,7 @@ class AISolver {
     if (!rule) return baseScore;
 
     let score = baseScore;
-    const projectedHours = currentHours + this.paidHours(shift);
+    const projectedHours = currentHours + this.weeklyHours(shift);
 
     if (projectedHours < rule.target_min) {
       score += rule.below_target_bonus;
@@ -893,7 +903,7 @@ class AISolver {
     });
 
     segmentShiftsForHours.forEach(shift => {
-      const paid = this.paidHours(shift);
+      const paid = this.weeklyHours(shift);
       for (const a of shift.assigned_staff || []) {
         if (!a || !a.user_id) continue;
         const id = a.user_id.toString();
@@ -935,7 +945,7 @@ class AISolver {
       const shiftId = shift._id || shift.id || `${shift.date}-${shift.start_time}`;
       const shiftAssignments = [];
       const shiftDuration = this.calculateShiftDuration(shift.start_time, shift.end_time);
-      const shiftPaidHours = this.paidHours(shift);
+      const shiftPaidHours = this.weeklyHours(shift);
       const shiftHomeId = shift.home_id.toString();
       const shiftYmd = shiftDateYmd(shift);
       const shiftIsWeekend = isWeekendYmd(shiftYmd);
@@ -970,6 +980,7 @@ class AISolver {
           currentHours: staffCurrentHours[s._id.toString()] || 0,
           projectedHours: (staffCurrentHours[s._id.toString()] || 0) + shiftPaidHours,
           typePriority: prioritizedTypes.indexOf(s.type) >= 0 ? prioritizedTypes.indexOf(s.type) : 999, // Not prioritized = very low priority
+          overSameShift: this.exceedsSameShiftRun(this.heldShifts(staffShiftMap, s._id), shift),
           homeAssignments: staffHomeAssignments[s._id.toString()][shiftHomeId] || 0,
           isDefaultHome: s.homes.some(home => home.home_id.toString() === shiftHomeId && home.is_default)
         }))
@@ -987,7 +998,12 @@ class AISolver {
         })
       
       const sortedStaffScores = staffScores.sort((a, b) => {
-          // Primary sort by type priority (prioritized types first)
+          // Staff who'd go over the same-shift-in-a-row limit only as a last resort
+          if (a.overSameShift !== b.overSameShift) {
+            return a.overSameShift ? 1 : -1;
+          }
+
+          // Then by type priority (prioritized types first)
           if (a.typePriority !== b.typePriority) {
             return a.typePriority - b.typePriority; // Lower index = higher priority
           }
@@ -1156,9 +1172,11 @@ class AISolver {
       const segmentKeys = context.segmentKeys || new Set();
       const weekHours = remaining
         .filter((s) => segmentKeys.has(shiftKeyOf(s)))
-        .reduce((sum, s) => sum + this.paidHours(s), (context.baseHoursByUser || {})[id] || 0);
-      if (weekHours + this.paidHours(toShift) > rule.hard_max) return false;
+        .reduce((sum, s) => sum + this.weeklyHours(s), (context.baseHoursByUser || {})[id] || 0);
+      if (weekHours + this.weeklyHours(toShift) > rule.hard_max) return false;
     }
+
+    if (this.exceedsSameShiftRun(remaining, toShift)) return false;
 
     const external = context.externalWorkDates && context.externalWorkDates[id];
     return !this.exceedsConsecutiveDays(this.workDates(remaining, external), shiftDateYmd(toShift));
@@ -1209,6 +1227,22 @@ class AISolver {
     for (let d = addDaysYmd(ymd, -1); workedDates.has(d); d = addDaysYmd(d, -1)) run++;
     for (let d = addDaysYmd(ymd, 1); workedDates.has(d); d = addDaysYmd(d, 1)) run++;
     return run > this.settings.max_consecutive_days;
+  }
+
+  /**
+   * Whether taking `candidate` would give someone holding `heldShifts` a run of the same
+   * shift (type and times) on more days in a row than max_same_shift_in_a_row.
+   */
+  exceedsSameShiftRun(heldShifts, candidate) {
+    if (!this.settings.same_shift_limit_enabled) return false;
+    const sig = shiftSignature(candidate);
+    const dates = new Set(heldShifts.filter((s) => shiftSignature(s) === sig).map(shiftDateYmd));
+    const ymd = shiftDateYmd(candidate);
+    if (dates.has(ymd)) return false;
+    let run = 1;
+    for (let d = addDaysYmd(ymd, -1); dates.has(d); d = addDaysYmd(d, -1)) run++;
+    for (let d = addDaysYmd(ymd, 1); dates.has(d); d = addDaysYmd(d, 1)) run++;
+    return run > this.settings.max_same_shift_in_a_row;
   }
 
   // Calculate total penalty for all assignments

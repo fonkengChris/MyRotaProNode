@@ -3,7 +3,7 @@ process.env.NODE_ENV = 'test';
 const AISolver = require('../../../services/aiSolver');
 const SolverSettings = require('../../../models/SolverSettings');
 const Shift = require('../../../models/Shift');
-const { restHoursBetween, paidHoursAfterBreak } = require('../../../utils/shiftHours');
+const { restHoursBetween, capHoursAfterBreak } = require('../../../utils/shiftHours');
 const { createTestUser, createTestHome, createTestService, createTestShift } = require('../../../tests/utils/testHelpers');
 
 let seq = 0;
@@ -82,8 +82,8 @@ describe('AISolver end to end', () => {
     for (const [userId, shifts] of Object.entries(byUser)) {
       expect(staffIds.has(userId)).toBe(true);
       expect(minRestFor(shifts)).toBeGreaterThanOrEqual(8);
-      const paidAfterBreaks = shifts.reduce((sum, s) => sum + paidHoursAfterBreak(s, home.break_policy), 0);
-      expect(paidAfterBreaks).toBeLessThanOrEqual(48);
+      const weekHours = shifts.reduce((sum, s) => sum + capHoursAfterBreak(s, home.break_policy), 0);
+      expect(weekHours).toBeLessThanOrEqual(48);
     }
   });
 

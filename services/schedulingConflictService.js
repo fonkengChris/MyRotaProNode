@@ -2,7 +2,7 @@ const TimeOffRequest = require('../models/TimeOffRequest');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
 const SolverSettings = require('../models/SolverSettings');
-const { restHoursBetween, paidHoursAfterBreak, computeBreakDeduction } = require('../utils/shiftHours');
+const { restHoursBetween, capHoursAfterBreak, computeBreakDeduction } = require('../utils/shiftHours');
 const Home = require('../models/Home');
 const {
   isOneToOne,
@@ -242,20 +242,20 @@ class SchedulingConflictService {
         const homes = homeIds.length ? await Home.find({ _id: { $in: homeIds } }).select('break_policy').lean() : [];
         const breakPolicyByHome = new Map(homes.map((h) => [String(h._id), h.break_policy]));
         const policyOf = (s) => breakPolicyByHome.get(String(s.home_id));
-        // Hours after each home's unpaid break deduction (as payroll pays them).
+        // Hours after each home's unpaid break deduction, with sleep-ins at their cap equivalent.
         const weeklyHours = weekWithCandidate.reduce((sum, s) => {
           if (isOneToOne(s)) {
             const extra = extraRosteredHours(s, weekWithCandidate);
             return sum + Math.max(0, extra - computeBreakDeduction(extra, policyOf(s)));
           }
-          return sum + paidHoursAfterBreak(s, policyOf(s));
+          return sum + capHoursAfterBreak(s, policyOf(s));
         }, 0);
 
         if (weeklyHours > policy.capHours) {
           overridableConflicts.push({
             conflictType: 'fulltime_weekly_cap_exceeded',
             conflicts: [],
-            message: `Full-time weekly paid hours (after breaks) would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may approve going above this limit`,
+            message: `Full-time weekly hours (after breaks, sleep-ins included) would be ${weeklyHours.toFixed(1)} (limit ${policy.capHours}). Only ${policy.approverRoles.join(' or ')} may approve going above this limit`,
             details: {
               projected_weekly_hours: Math.round(weeklyHours * 10) / 10,
               cap_hours: policy.capHours,

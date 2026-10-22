@@ -3,6 +3,10 @@ const {
   workedHourBreakdown,
   setSleepInHours,
   DEFAULT_SLEEP_IN_HOURS,
+  paidHoursAfterBreak,
+  capHoursAfterBreak,
+  setSleepCapHours,
+  DEFAULT_SLEEP_CAP_HOURS,
 } = require('../../../utils/shiftHours');
 const { shiftStartDate } = require('../../../utils/shiftTime');
 
@@ -66,5 +70,30 @@ describe('night-sleep hours: sleep is the last N hours of the shift', () => {
     test('leaving an hour early cuts sleep hours', () => {
       expect(workedHourBreakdown(shift, clocked(0, 11))).toMatchObject({ sleep_in_hours: 8, paid_work_hours: 3 });
     });
+  });
+});
+
+describe('weekly-cap hours: sleep counts as cap_hours of work time', () => {
+  afterEach(() => {
+    setSleepInHours(DEFAULT_SLEEP_IN_HOURS);
+    setSleepCapHours(DEFAULT_SLEEP_CAP_HOURS);
+  });
+  const extra = (shift) => capHoursAfterBreak(shift) - paidHoursAfterBreak(shift);
+
+  test('a full 9h sleep period adds 5h on top of paid hours', () => {
+    expect(extra(sleepShift('20:00', '08:00'))).toBeCloseTo(5);
+  });
+
+  test('a shift holding less than a full sleep period adds pro rata', () => {
+    expect(extra(sleepShift('23:00', '05:00'))).toBeCloseTo((6 / 9) * 5); // all 6h are sleep
+  });
+
+  test('follows the admin settings, and leaves other shift types alone', () => {
+    setSleepCapHours(0);
+    expect(extra(sleepShift('20:00', '08:00'))).toBeCloseTo(0);
+    setSleepCapHours(4);
+    setSleepInHours(8);
+    expect(extra(sleepShift('20:00', '08:00'))).toBeCloseTo(4);
+    expect(extra({ ...sleepShift('20:00', '08:00'), shift_type: 'night-wake' })).toBe(0);
   });
 });

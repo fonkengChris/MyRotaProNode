@@ -59,9 +59,9 @@ function createPayrollPdf({
   const pageH = doc.page.height;
   const margin = 36;
   const tableStartX = margin;
-  const colWidths = [120, 72, 62, 58, 58, 58, 72, 72, 62];
+  const colWidths = [120, 72, 62, 58, 58, 58, 62, 72, 72, 62];
   // "1:1 Hrs" is the part of Day Hrs that came from 1-to-1 shifts outside background time.
-  const headers = ['Name', 'Role', 'Rate/hr', 'Day Hrs', 'Night Hrs', '1:1 Hrs', 'Sleep-in Pay', 'Leave Pay', 'Gross'];
+  const headers = ['Name', 'Role', 'Rate/hr', 'Day Hrs', 'Night Hrs', '1:1 Hrs', 'Sleep Nights', 'Sleep-in Pay', 'Leave Pay', 'Gross'];
 
   const title = isDraft
     ? 'Payroll Report — DRAFT (estimated from rostered hours)'
@@ -107,6 +107,7 @@ function createPayrollPdf({
   let totalDay = 0;
   let totalNight = 0;
   let totalOneToOne = 0;
+  let totalSleepNights = 0;
   let totalSleepInPay = 0;
   let totalLeavePay = 0;
   let totalGross = 0;
@@ -122,6 +123,7 @@ function createPayrollPdf({
     totalDay += Number(record.day_hours || 0);
     totalNight += Number(record.night_hours || 0);
     totalOneToOne += Number(record.one_to_one_hours || 0);
+    totalSleepNights += Number(record.sleep_night_shifts || 0);
     totalSleepInPay += Number(record.sleep_in_pay || 0);
     totalLeavePay += Number(record.leave_pay || 0);
     totalGross += Number(record.gross_pay || 0);
@@ -133,6 +135,7 @@ function createPayrollPdf({
       Number(record.day_hours || 0).toFixed(1),
       Number(record.night_hours || 0).toFixed(1),
       Number(record.one_to_one_hours || 0).toFixed(1),
+      String(Number(record.sleep_night_shifts || 0)),
       formatMoney(record.sleep_in_pay || 0),
       formatMoney(record.leave_pay || 0),
       formatMoney(record.gross_pay || 0),
@@ -154,6 +157,7 @@ function createPayrollPdf({
   doc.text(`Total day hours (paid): ${totalDay.toFixed(1)}`, margin, y);
   doc.text(`Total night hours (paid): ${totalNight.toFixed(1)}`, margin, doc.y + 2);
   doc.text(`Of which 1-to-1 hours (outside background shifts): ${totalOneToOne.toFixed(1)}`, margin, doc.y + 2);
+  doc.text(`Total sleep nights: ${totalSleepNights}`, margin, doc.y + 2);
   doc.text(`Total sleep-in pay: ${formatMoney(totalSleepInPay)}`, margin, doc.y + 2);
   doc.text(`Total leave pay: ${formatMoney(totalLeavePay)}`, margin, doc.y + 2);
   doc.text(`Total gross pay: ${formatMoney(totalGross)}`, margin, doc.y + 2);

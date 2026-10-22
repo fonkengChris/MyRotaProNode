@@ -59,9 +59,11 @@ describe('AISolver rest and overlap', () => {
 describe('AISolver consecutive days', () => {
   const dates = (...ymds) => new Set(ymds);
 
-  test('disabled by default', () => {
+  test('on by default with a 6-day limit', () => {
     const solver = makeSolver();
-    expect(solver.exceedsConsecutiveDays(dates('2026-10-01', '2026-10-02', '2026-10-03'), '2026-10-04')).toBe(false);
+    const six = dates('2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06');
+    expect(solver.exceedsConsecutiveDays(six, '2026-10-07')).toBe(true);
+    expect(makeSolver({ consecutive_days_enabled: false }).exceedsConsecutiveDays(six, '2026-10-07')).toBe(false);
   });
 
   test('counts runs on both sides of the candidate day', () => {
@@ -70,6 +72,40 @@ describe('AISolver consecutive days', () => {
     expect(solver.exceedsConsecutiveDays(dates('2026-10-01', '2026-10-02', '2026-10-04'), '2026-10-03')).toBe(true);
     // Already working that day: a second shift doesn't lengthen the run.
     expect(solver.exceedsConsecutiveDays(dates('2026-10-01', '2026-10-02', '2026-10-03'), '2026-10-03')).toBe(false);
+  });
+});
+
+describe('AISolver same shift in a row', () => {
+  const nights = (...ymds) => ymds.map((d) => shift(d, '22:00', '08:00', { shift_type: 'night-sleep' }));
+
+  test('limits runs of the same shift, counting both sides of the candidate day', () => {
+    const solver = makeSolver({ max_same_shift_in_a_row: 3 });
+    const [candidate] = nights('2026-10-03');
+    expect(solver.exceedsSameShiftRun(nights('2026-10-01', '2026-10-02'), candidate)).toBe(false);
+    expect(solver.exceedsSameShiftRun(nights('2026-10-01', '2026-10-02', '2026-10-04'), candidate)).toBe(true);
+  });
+
+  test('a different shift on the neighbouring days does not count', () => {
+    const solver = makeSolver({ max_same_shift_in_a_row: 2 });
+    const held = [...nights('2026-10-01'), shift('2026-10-02', '22:00', '08:00', { shift_type: 'night-wake' })];
+    expect(solver.exceedsSameShiftRun(held, nights('2026-10-03')[0])).toBe(false);
+  });
+
+  test('greedy rotates the same night off one person, but still fills it as a last resort', () => {
+    const solver = makeSolver({ max_same_shift_in_a_row: 2, consecutive_days_enabled: false });
+    const week = nights('2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08');
+    const member = (id) => ({ _id: id, name: id, type: 'fulltime', role: 'support_worker', homes: [{ home_id: 'home1', is_default: true }] });
+    const constraints = (scores) => Object.fromEntries(
+      Object.entries(scores).map(([id, sc]) => [id, Object.fromEntries(week.map((s) => [s._id, sc]))])
+    );
+    const run = (staff, scores) => solver.greedyMultiHomeAssignment(week, staff, constraints(scores), ['home1'], {
+      overlapContextShifts: week, segmentShiftsForHours: week
+    }).map((r) => r.assignments[0] && r.assignments[0].user_id);
+
+    // u1 outscores u2 every night, but never does more than 2 nights in a row.
+    expect(run([member('u1'), member('u2')], { u1: 120, u2: 100 })).toEqual(['u1', 'u1', 'u2', 'u1']);
+    // With nobody else available the shift is still filled.
+    expect(run([member('u1')], { u1: 100 })).toEqual(['u1', 'u1', 'u1', 'u1']);
   });
 });
 

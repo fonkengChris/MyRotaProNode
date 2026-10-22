@@ -27,7 +27,9 @@ describe('AI solver constraint routes', () => {
     expect(settings.hours.bank.hard_max).toBe(15);
     expect(settings.manual_assign_cap.fulltime_hours).toBe(48);
     expect(settings.manual_assign_cap.approver_roles).toEqual(['admin']);
-    expect(settings.consecutive_days_enabled).toBe(false);
+    expect(settings.consecutive_days_enabled).toBe(true);
+    expect(settings.same_shift_limit_enabled).toBe(true);
+    expect(settings.max_same_shift_in_a_row).toBe(3);
     expect(defaults).toEqual(SolverSettings.DEFAULTS);
     expect(locked_rules.map((r) => r.key)).toContain('no_double_booking');
   });
@@ -66,12 +68,12 @@ describe('AI solver constraint routes', () => {
     const admin = await createTestUser({ role: 'admin', email: email('admin') });
     const auth = getAuthHeader(admin._id);
     await request(app).put('/api/ai-solver/constraints').set('Authorization', auth)
-      .send({ min_rest_hours: 12, consecutive_days_enabled: true }).expect(200);
+      .send({ min_rest_hours: 12, consecutive_days_enabled: false }).expect(200);
 
     const response = await request(app).post('/api/ai-solver/constraints/reset')
       .set('Authorization', auth).expect(200);
     expect(response.body.settings.min_rest_hours).toBe(8);
-    expect(response.body.settings.consecutive_days_enabled).toBe(false);
+    expect(response.body.settings.consecutive_days_enabled).toBe(true);
   });
 
   test('key workers can read but not change the rules', async () => {
