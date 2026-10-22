@@ -40,6 +40,7 @@ const { authenticateToken } = require('./middleware/auth');
 
 // Background services
 const { startAttendanceScheduler } = require('./services/attendanceScheduler');
+const SolverSettings = require('./models/SolverSettings');
 
 const app = express();
 const PORT = config.port;
@@ -124,6 +125,8 @@ if (!isTestMode && isDisconnected) {
     console.log('✅ Connected to MongoDB');
     // Start the attendance reminder/escalation scheduler once the DB is ready.
     startAttendanceScheduler();
+    // Load org settings so the sleep-in length (used by every hours calculation) is current.
+    SolverSettings.getSettings().catch((err) => console.error('Failed to load solver settings:', err));
   })
   .catch(err => {
     console.error('❌ MongoDB connection error:', err);

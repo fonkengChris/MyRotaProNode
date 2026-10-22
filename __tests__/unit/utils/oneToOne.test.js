@@ -78,11 +78,12 @@ describe('coverage and extra hours', () => {
   });
 
   test('a 1-to-1 during the sleep-in part of a night-sleep shift is extra paid time', () => {
-    const sleep = shift('2026-01-12', '22:00', '07:00', 'night-sleep');
+    // 11h shift: sleep is the last 9h (22:00 → 07:00), 20:00 → 22:00 is paid.
+    const sleep = shift('2026-01-12', '20:00', '07:00', 'night-sleep');
     const oneToOne = shift('2026-01-13', '02:00', '04:00', 'one_to_one');
     expect(isCoveredBy(oneToOne, [sleep])).toBe(false);
     expect(extraRosteredHours(oneToOne, [sleep])).toBe(2);
     const paid = paidPortion(sleep, shiftWindow(sleep));
-    expect((paid.endMs - paid.startMs) / H).toBe(2); // 22:00 → midnight
+    expect((paid.endMs - paid.startMs) / H).toBe(2); // 20:00 → 22:00
   });
 });

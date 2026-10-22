@@ -1,8 +1,9 @@
 /**
  * Hour breakdown for payroll / caps:
- * - `night-sleep` only: the sleep-night portion is midnight (00:00) → shift end and is NOT paid work;
- *   the pre-midnight portion (shift start → 00:00) is regular paid hours. Sleep is paid a flat
- *   allowance (SLEEP_NIGHT_FLAT_PAY_GBP in routes/payroll.js).
+ * - `night-sleep` only: the sleep period is the LAST `getSleepInHours()` hours (default 9,
+ *   admin-editable in SolverSettings.sleep_in) of the rostered shift and is NOT paid work; any
+ *   earlier hours are regular paid hours. A shift no longer than that is all sleep. Sleep is paid
+ *   a flat allowance (SLEEP_NIGHT_FLAT_PAY_GBP in routes/payroll.js).
  * - `night-wake`, `one_to_one`, legacy `night`, and all other types: full shift span = regular paid hours
  *   (then break deductions apply to that paid portion in the app layer).
  */
@@ -13,6 +14,22 @@ const {
   LATE_ARRIVAL_MINUTES,
   CLOCK_OUT_GRACE_MINUTES,
 } = require('./shiftTime');
+
+// Length of the sleep period of a `night-sleep` shift. Org-wide and admin-editable: the
+// SolverSettings model pushes its `sleep_in.sleep_hours` here whenever the settings document
+// is loaded or saved (and server.js loads it at startup), so these sync helpers — used by
+// Shift virtuals, payroll, the solver and caps — don't need it passed in.
+const DEFAULT_SLEEP_IN_HOURS = 9;
+let sleepInHours = DEFAULT_SLEEP_IN_HOURS;
+
+function setSleepInHours(hours) {
+  const n = Number(hours);
+  sleepInHours = Number.isFinite(n) && n > 0 ? n : DEFAULT_SLEEP_IN_HOURS;
+}
+
+function getSleepInHours() {
+  return sleepInHours;
+}
 
 function durationFromTimes(startTime, endTime) {
   if (!startTime || !endTime) return 0;
@@ -40,16 +57,24 @@ function wallClockRange(startTime, endTime) {
 }
 
 /**
- * Sleep-night hours of a worked/scheduled window [startMin, endMin] (wall-clock minutes on the
- * shift's start-day axis). The sleep period runs from the wall-clock midnight during the shift up
- * to the shift end. The boundary is the next 00:00 at or after the scheduled start: an evening
- * start (e.g. 20:00) → 1440; a 00:00 start → 0, so the whole shift is sleep. Anchoring the boundary
- * to the scheduled start (not the possibly-late effective start) keeps late arrival / early leave
- * correctly reducing the pre-midnight regular portion.
+ * Minute (on the shift's start-day axis) at which the sleep period of a rostered
+ * [scheduledStartMin, scheduledEndMin] night-sleep shift begins: the last `getSleepInHours()`
+ * hours of the shift, or the whole shift if it is shorter. E.g. 20:00–08:00 → 23:00.
  */
-function nightSleepHours(startMin, endMin, scheduledStartMin) {
-  const boundaryMin = Math.ceil(scheduledStartMin / 1440) * 1440;
-  return Math.max(0, endMin - Math.max(startMin, boundaryMin)) / 60;
+function sleepStartMin(scheduledStartMin, scheduledEndMin) {
+  return Math.max(scheduledStartMin, scheduledEndMin - sleepInHours * 60);
+}
+
+/**
+ * Sleep hours of a worked/scheduled window [startMin, endMin] (wall-clock minutes on the
+ * shift's start-day axis): its overlap with the sleep period, which is fixed on the ROSTERED
+ * times (see sleepStartMin). So late arrival cuts the regular portion and leaving early cuts
+ * the sleep portion, each by the time actually missed.
+ */
+function nightSleepHours(startMin, endMin, scheduledStartMin, scheduledEndMin) {
+  const from = Math.max(startMin, sleepStartMin(scheduledStartMin, scheduledEndMin));
+  const to = Math.min(endMin, scheduledEndMin);
+  return Math.max(0, to - from) / 60;
 }
 
 /**
@@ -118,9 +143,9 @@ function clampedWorkedDurationHours(shift, assignment) {
  * Hour breakdown ({ duration_hours, sleep_in_hours, paid_work_hours }) computed from the
  * ACTUAL clamped worked window (see effectiveWorkedWindow), or null without a valid
  * clock-in/out pair. For `night-sleep`, the effective window's instants are mapped onto
- * the wall-clock minute axis so the midnight→end sleep portion is measured on the hours
- * the staff member actually worked (late arrival / early leave shrink the pre-midnight
- * regular portion). The flat sleep allowance itself is handled by the payroll caller.
+ * the wall-clock minute axis and intersected with the rostered sleep period (the last
+ * getSleepInHours() hours of the shift). The flat sleep allowance itself is handled by the
+ * payroll caller.
  */
 function workedHourBreakdown(shift, assignment) {
   const w = effectiveWorkedWindow(shift, assignment);
@@ -134,9 +159,12 @@ function workedHourBreakdown(shift, assignment) {
   const range = wallClockRange(shift.start_time, shift.end_time);
   const schedStartMs = shiftStartDate(shift).getTime();
   const baseStartMin = range ? range.startMin : 0;
+  const baseEndMin = range
+    ? range.endMin
+    : baseStartMin + (shiftEndDate(shift).getTime() - schedStartMs) / 60000;
   const startMin = baseStartMin + (w.startMs - schedStartMs) / 60000;
   const endMin = baseStartMin + (w.endMs - schedStartMs) / 60000;
-  const sleep_in_hours = nightSleepHours(startMin, endMin, baseStartMin);
+  const sleep_in_hours = nightSleepHours(startMin, endMin, baseStartMin, baseEndMin);
 
   return {
     duration_hours: duration,
@@ -230,21 +258,22 @@ function getShiftHourBreakdown(shift, overrideDurationHours) {
 
   // Only sleeping-night uses sleep-in; all other types (including `one_to_one`) are paid like regular shifts.
   if (shiftType === 'night-sleep') {
-    // Sleep-in is the midnight→end portion of the scheduled window; the pre-midnight portion is
-    // regular paid work. Computed from wall-clock times so it works for synthetic shift objects
-    // without a date; a numeric duration override is not applied here (the clamped-actual path
-    // uses workedHourBreakdown instead).
+    // Sleep-in is the last getSleepInHours() hours of the scheduled window; anything before it
+    // is regular paid work. Computed from wall-clock times so it works for synthetic shift
+    // objects without a date; a numeric duration override is not applied here (the
+    // clamped-actual path uses workedHourBreakdown instead).
     const range = wallClockRange(shift.start_time, shift.end_time);
     if (!range) {
-      // No usable times: fall back to treating the whole duration as sleep.
+      // No usable times: up to getSleepInHours() of the duration is sleep, the rest regular.
+      const sleep = Math.min(duration, sleepInHours);
       return {
         duration_hours: duration,
-        sleep_in_hours: duration,
-        paid_work_hours: 0,
+        sleep_in_hours: sleep,
+        paid_work_hours: Math.max(0, duration - sleep),
       };
     }
     const scheduledDuration = (range.endMin - range.startMin) / 60;
-    const sleep_in_hours = nightSleepHours(range.startMin, range.endMin, range.startMin);
+    const sleep_in_hours = nightSleepHours(range.startMin, range.endMin, range.startMin, range.endMin);
     return {
       duration_hours: scheduledDuration,
       sleep_in_hours,
@@ -260,6 +289,9 @@ function getShiftHourBreakdown(shift, overrideDurationHours) {
 }
 
 module.exports = {
+  DEFAULT_SLEEP_IN_HOURS,
+  setSleepInHours,
+  getSleepInHours,
   durationFromTimes,
   nightSleepHours,
   restHoursBetween,

@@ -4,6 +4,7 @@ const router = express.Router();
 const Shift = require('../models/Shift');
 const Home = require('../models/Home');
 const User = require('../models/User');
+const SolverSettings = require('../models/SolverSettings');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const OvertimeRequest = require('../models/OvertimeRequest');
 const { requireRole, getUserHomeIds } = require('../middleware/auth');
@@ -22,30 +23,18 @@ const {
   shiftDateOffset,
 } = require('../utils/oneToOne');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
+const { hourlyRateFor } = require('../utils/payRates');
 
-// Per-role default hourly rates (GBP). Wages are paid at the rate for the staff
-// member's role; unknown roles fall back to FALLBACK_HOURLY_RATE_GBP. Admins can
-// override these per report run (see resolvePayRates).
-const DEFAULT_ROLE_RATES_GBP = Object.freeze({
-  support_worker: 12.71,
-  senior_staff: 14.0,
-  key_worker: 15.0,
-  admin: 14.0,
-});
-const FALLBACK_HOURLY_RATE_GBP = 12.71;
 const SLEEP_NIGHT_FLAT_PAY_GBP = 55;
 const LEAVE_PAID_HOURS_PER_DAY = 7.5;
 
-// Defense-in-depth upper bounds for admin-supplied pay-rate overrides.
+// Defense-in-depth upper bound for an admin-supplied sleep-night pay override.
 // Values outside [0, max] fall back to the default rather than being applied.
-const MAX_HOURLY_RATE_GBP = 100;
 const MAX_SLEEP_NIGHT_FLAT_PAY_GBP = 500;
 
-/** Hourly rate for a role from a resolved role→rate map, with a safe fallback. */
-function rateForRole(role, roleRates) {
-  const rate = roleRates && roleRates[role];
-  return Number.isFinite(rate) ? rate : FALLBACK_HOURLY_RATE_GBP;
-}
+// Staff fields payroll needs. hourly_rate is `select: false` on User, so it must be
+// named explicitly.
+const PAYROLL_STAFF_FIELDS = 'name role hourly_rate';
 
 const NIGHT_SHIFT_TYPES = new Set(['night-wake', 'night-sleep', 'night']);
 
@@ -83,72 +72,18 @@ function normalizeBoundedNumber(value, fallback, max) {
 }
 
 /**
- * Parse an admin-supplied `role_rates` query value into a validated role→rate map,
- * layered over the per-role defaults. Accepts a JSON object string
- * (e.g. '{"support_worker":12.71,"senior_staff":14}'). Only known roles are honoured
- * and each value is clamped to [0, MAX_HOURLY_RATE_GBP]; anything invalid keeps the
- * default for that role.
- */
-function parseRoleRates(raw) {
-  const rates = { ...DEFAULT_ROLE_RATES_GBP };
-  if (!raw) return rates;
-  let parsed;
-  try {
-    parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch {
-    return rates;
-  }
-  if (!parsed || typeof parsed !== 'object') return rates;
-  for (const role of Object.keys(DEFAULT_ROLE_RATES_GBP)) {
-    if (parsed[role] != null) {
-      rates[role] = normalizeBoundedNumber(
-        parsed[role],
-        DEFAULT_ROLE_RATES_GBP[role],
-        MAX_HOURLY_RATE_GBP
-      );
-    }
-  }
-  return rates;
-}
-
-/**
- * Resolve the pay rates to use for a report.
+ * Resolve the per-run pay settings for a report.
  *
- * Pay rates directly determine how much staff are paid, so overriding them is a
- * privileged action. Only admins may override the defaults; for any other role the
- * client-supplied values are ignored and the per-role defaults are used. Admin
- * overrides are clamped to sane upper bounds so a typo (or a tampered request) cannot
- * inflate gross pay. Wages are paid at the rate for each staff member's role.
- *
- * Backwards-compatible: a legacy single `hourly_rate` query (no `role_rates`) is applied
- * to every role.
+ * Wages are paid at each staff member's own `hourly_rate` (set on their profile), so
+ * the only per-run override left is the sleep-night flat pay. Only admins may override
+ * it, and the value is clamped to a sane upper bound so a typo (or a tampered request)
+ * cannot inflate gross pay.
  */
 function resolvePayRates(req) {
   if (req.user?.role !== 'admin') {
-    return {
-      roleRates: { ...DEFAULT_ROLE_RATES_GBP },
-      sleepNightFlatPay: SLEEP_NIGHT_FLAT_PAY_GBP,
-    };
+    return { sleepNightFlatPay: SLEEP_NIGHT_FLAT_PAY_GBP };
   }
-
-  let roleRates;
-  if (req.query.role_rates != null) {
-    roleRates = parseRoleRates(req.query.role_rates);
-  } else if (req.query.hourly_rate != null) {
-    const flat = normalizeBoundedNumber(
-      req.query.hourly_rate,
-      FALLBACK_HOURLY_RATE_GBP,
-      MAX_HOURLY_RATE_GBP
-    );
-    roleRates = Object.fromEntries(
-      Object.keys(DEFAULT_ROLE_RATES_GBP).map((role) => [role, flat])
-    );
-  } else {
-    roleRates = { ...DEFAULT_ROLE_RATES_GBP };
-  }
-
   return {
-    roleRates,
     sleepNightFlatPay: normalizeBoundedNumber(
       req.query.sleep_night_pay,
       SLEEP_NIGHT_FLAT_PAY_GBP,
@@ -349,7 +284,6 @@ async function buildPayrollRecords({
   endDate,
   requestedHomeId,
   currentUser,
-  roleRates,
   sleepNightFlatPay,
   mode = 'final',
 }) {
@@ -359,6 +293,9 @@ async function buildPayrollRecords({
   // never clocked out.
   const isDraft = mode === 'draft';
   const isAdmin = currentUser.role === 'admin';
+  // Re-read org settings so the sleep-in length used below is the stored one (the
+  // settings model syncs it into utils/shiftHours on load).
+  await SolverSettings.getSettings();
   const userHomeIds = getUserHomeIds(currentUser);
 
   let homeFilter = null;
@@ -406,7 +343,7 @@ async function buildPayrollRecords({
     shiftFilter.home_id = Array.isArray(homeFilter) ? { $in: homeFilter } : homeFilter;
   }
 
-  const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', 'name role');
+  const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', PAYROLL_STAFF_FIELDS);
 
   // Break deductions are configured per home, so resolve each home's policy once and
   // key it by home id for use while walking the shifts below.
@@ -437,7 +374,7 @@ async function buildPayrollRecords({
           uid,
           name: staff.name,
           role: staff.role,
-          hourlyRate: rateForRole(staff.role, roleRates),
+          hourlyRate: hourlyRateFor(staff),
         })
       );
     }
@@ -516,7 +453,7 @@ async function buildPayrollRecords({
     status: 'approved',
     start_date: { $lte: endDate },
     end_date: { $gte: startDate },
-  }).populate('user_id', 'name role');
+  }).populate('user_id', PAYROLL_STAFF_FIELDS);
 
   for (const request of timeOffRequests) {
     const staff = request.user_id;
@@ -542,7 +479,7 @@ async function buildPayrollRecords({
           uid,
           name: staff.name,
           role: staff.role,
-          hourlyRate: rateForRole(staff.role, roleRates),
+          hourlyRate: hourlyRateFor(staff),
         })
       );
     }
@@ -621,14 +558,13 @@ router.get('/', requireRole(['admin']), async (req, res) => {
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
     const mode = req.query.mode === 'draft' ? 'draft' : 'final';
-    const { roleRates, sleepNightFlatPay } = resolvePayRates(req);
+    const { sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
       startDate,
       endDate,
       requestedHomeId: homeId,
       currentUser: req.user,
-      roleRates,
       sleepNightFlatPay,
       mode,
     });
@@ -637,7 +573,6 @@ router.get('/', requireRole(['admin']), async (req, res) => {
       start_date: startDate,
       end_date: endDate,
       mode,
-      role_rates: roleRates,
       records: data.records,
       totals: data.totals,
     });
@@ -657,14 +592,13 @@ router.get('/pdf', requireRole(['admin']), async (req, res) => {
     const { startDate, endDate } = dateRange;
     const homeId = normalizeOptionalHomeId(req.query.home_id);
     const mode = req.query.mode === 'draft' ? 'draft' : 'final';
-    const { roleRates, sleepNightFlatPay } = resolvePayRates(req);
+    const { sleepNightFlatPay } = resolvePayRates(req);
 
     const data = await buildPayrollRecords({
       startDate,
       endDate,
       requestedHomeId: homeId,
       currentUser: req.user,
-      roleRates,
       sleepNightFlatPay,
       mode,
     });
@@ -683,7 +617,6 @@ router.get('/pdf', requireRole(['admin']), async (req, res) => {
       startDate,
       endDate,
       generatedBy: req.user?.name,
-      roleRates,
       sleepNightFlatPay,
       mode,
     });

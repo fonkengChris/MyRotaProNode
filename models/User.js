@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { defaultRateForRole, MAX_HOURLY_RATE_GBP } = require('../utils/payRates');
 
 // Legacy role values that predate a rename, mapped to their current canonical role.
 // The DB may still hold `home_manager` docs that were never migrated; we transparently
@@ -60,6 +61,16 @@ const userSchema = new mongoose.Schema({
     set: normalizeRole,
     default: 'support_worker',
     required: true
+  },
+  // Individual hourly pay (GBP). New users start at their role's default rate; admins
+  // can then set each person's own rate. Hidden from queries by default (pay is
+  // private) — routes that need it must select '+hourly_rate' explicitly.
+  hourly_rate: {
+    type: Number,
+    default: function() { return defaultRateForRole(this.role); },
+    min: [0, 'Hourly rate cannot be negative'],
+    max: [MAX_HOURLY_RATE_GBP, `Hourly rate cannot exceed ${MAX_HOURLY_RATE_GBP}`],
+    select: false
   },
   type: {
     type: String,
@@ -294,6 +305,8 @@ userSchema.virtual('publicInfo').get(function() {
     type: this.type,
     min_hours_per_week: this.min_hours_per_week,
     annual_leave_entitlement_days: this.annual_leave_entitlement_days,
+    // Only present when the query selected it (see `select: false` above).
+    hourly_rate: this.hourly_rate,
     homes: this.homes,
     default_home_id: this.default_home_id,
     is_active: this.is_active,

@@ -367,6 +367,20 @@ router.get('/constraints', [
   }
 });
 
+// @route   GET /api/ai-solver/sleep-in
+// @desc    Sleep-in length (hours at the end of a night-sleep shift that count as sleep),
+//          needed by every client that shows shift hours
+// @access  Private (any signed-in user)
+router.get('/sleep-in', authenticateToken, async (req, res) => {
+  try {
+    const settings = await SolverSettings.getSettings();
+    res.json({ sleep_hours: settings.sleep_in.sleep_hours });
+  } catch (error) {
+    console.error('Sleep-in settings error:', error);
+    res.status(500).json({ error: 'Server error while retrieving sleep-in settings' });
+  }
+});
+
 // @route   PUT /api/ai-solver/constraints
 // @desc    Update the rules the AI solver uses
 // @access  Private (Admins only)

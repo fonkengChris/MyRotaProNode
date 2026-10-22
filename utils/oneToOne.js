@@ -13,6 +13,7 @@
  */
 const moment = require('moment-timezone');
 const { shiftStartDate, shiftEndDate, APP_TIMEZONE } = require('./shiftTime');
+const { getSleepInHours } = require('./shiftHours');
 
 const ONE_TO_ONE = 'one_to_one';
 
@@ -31,21 +32,19 @@ function shiftWindow(shift) {
 }
 
 /**
- * The part of a background shift's window that is paid work. For `night-sleep` the
- * midnight → end portion is a sleep-in (flat allowance, not paid hours), so a 1-to-1
- * during that time is NOT already paid and must not be subtracted.
+ * The part of a background shift's window that is paid work. For `night-sleep` the last
+ * getSleepInHours() hours of the ROSTERED shift are a sleep-in (flat allowance, not paid
+ * hours), so a 1-to-1 during that time is NOT already paid and must not be subtracted.
  */
 function paidPortion(shift, window) {
   if (!window) return null;
   if (shift.shift_type !== 'night-sleep') return window;
-  const midnight = moment
-    .tz(shift.date, 'YYYY-MM-DD', APP_TIMEZONE)
-    .add(1, 'day')
-    .valueOf();
-  // Starts at/after midnight → the whole shift is sleep.
-  const cut = window.startMs >= midnight ? window.startMs : Math.min(midnight, window.endMs);
-  if (cut <= window.startMs) return null;
-  return { startMs: window.startMs, endMs: cut };
+  const rostered = shiftWindow(shift);
+  if (!rostered) return null;
+  const sleepStartMs = Math.max(rostered.startMs, rostered.endMs - getSleepInHours() * 3600000);
+  const end = Math.min(window.endMs, sleepStartMs);
+  if (end <= window.startMs) return null;
+  return { startMs: window.startMs, endMs: end };
 }
 
 /**

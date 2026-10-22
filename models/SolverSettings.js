@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { DEFAULT_SLEEP_IN_HOURS, setSleepInHours } = require('../utils/shiftHours');
 
 // Company-wide rules the AI solver (services/aiSolver.js) uses to generate rotas and
 // timetables, plus the rest/weekly-cap rules the manual-assignment conflict check
@@ -12,6 +13,9 @@ const mongoose = require('mongoose');
 // leave_limit isn't a solver rule but lives here so admins edit it alongside them: the
 // most staff from one home allowed on approved leave on the same day before an admin
 // override is needed (services/timeOffService.js).
+//
+// sleep_in isn't a solver rule either: it's how many hours at the end of a `night-sleep`
+// shift count as the sleep period (flat allowance, not paid hours) — see utils/shiftHours.js.
 
 const ROLES = ['admin', 'key_worker', 'senior_staff', 'support_worker'];
 const EMPLOYMENT_TYPES = ['fulltime', 'parttime', 'bank'];
@@ -69,6 +73,9 @@ const DEFAULTS = {
   },
   leave_limit: {
     max_staff_per_home: 3
+  },
+  sleep_in: {
+    sleep_hours: DEFAULT_SLEEP_IN_HOURS
   }
 };
 
@@ -129,6 +136,9 @@ const solverSettingsSchema = new mongoose.Schema({
   leave_limit: {
     max_staff_per_home: { ...num(1, 100), default: DEFAULTS.leave_limit.max_staff_per_home }
   },
+  sleep_in: {
+    sleep_hours: { ...num(1, 24), default: DEFAULTS.sleep_in.sleep_hours }
+  },
   updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
@@ -141,6 +151,12 @@ solverSettingsSchema.pre('validate', function (next) {
   }
   next();
 });
+
+// Keep the sleep-in length used by the sync hour helpers (utils/shiftHours.js) in step with
+// the stored setting whenever the document is read or written.
+const syncSleepInHours = (doc) => setSleepInHours(doc?.sleep_in?.sleep_hours);
+solverSettingsSchema.post('init', syncSleepInHours);
+solverSettingsSchema.post('save', syncSleepInHours);
 
 // Returns the single settings document, creating it if it doesn't exist yet.
 solverSettingsSchema.statics.getSettings = async function () {

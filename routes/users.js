@@ -5,6 +5,9 @@ const Shift = require('../models/Shift');
 const mongoose = require('mongoose');
 const { requireRole, requireHomeAccess, getUserHomeIds } = require('../middleware/auth');
 
+// Hourly pay is private: only admins see or set it (it is `select: false` on the model).
+const payFields = (req) => (req.user.role === 'admin' ? '+hourly_rate' : '');
+
 // Get all users (admins see everyone; everyone else is scoped to their own home(s))
 router.get('/', async (req, res) => {
   try {
@@ -32,7 +35,7 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const users = await User.find(filter);
+    const users = await User.find(filter).select(payFields(req));
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch users' });
@@ -43,7 +46,7 @@ router.get('/', async (req, res) => {
 // only way to add users to the system.
 router.post('/', requireRole(['admin']), async (req, res) => {
   try {
-    const { name, email, phone, password, role, type, home_id, homes, annual_leave_entitlement_days } = req.body;
+    const { name, email, phone, password, role, type, home_id, homes, annual_leave_entitlement_days, hourly_rate } = req.body;
 
     if (!name || !email || !phone || !password || !role) {
       return res.status(400).json({ error: 'Name, email, phone, password and role are required' });
@@ -76,6 +79,11 @@ router.post('/', requireRole(['admin']), async (req, res) => {
       userData.annual_leave_entitlement_days = annual_leave_entitlement_days;
     }
 
+    // Optional individual rate; otherwise the model defaults it to the role's rate.
+    if (hourly_rate !== undefined && hourly_rate !== null && hourly_rate !== '') {
+      userData.hourly_rate = hourly_rate;
+    }
+
     // Attach a home if provided (non-admin users). Accept either `home_id` or a
     // `homes` array from the client.
     const primaryHomeId = home_id
@@ -92,6 +100,9 @@ router.post('/', requireRole(['admin']), async (req, res) => {
     res.status(201).json(user.publicInfo);
   } catch (error) {
     console.error('Create user error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: Object.values(error.errors).map(e => e.message).join(', ') });
+    }
     res.status(500).json({ error: 'Server error while creating user' });
   }
 });
@@ -104,7 +115,7 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID provided' });
     }
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(req.params.id).select(payFields(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -161,15 +172,22 @@ router.put('/:id', async (req, res) => {
       delete updateData.min_hours_per_week;
       delete updateData.annual_leave_entitlement_days;
     }
+    // Pay rates are admin-only — key workers can manage staff but not their pay.
+    if (req.user.role !== 'admin') {
+      delete updateData.hourly_rate;
+    }
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
-    );
+    ).select(payFields(req));
 
     res.json(user);
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: Object.values(error.errors).map(e => e.message).join(', ') });
+    }
     res.status(500).json({ error: 'Failed to update user' });
   }
 });

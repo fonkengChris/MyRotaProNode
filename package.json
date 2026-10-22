@@ -21,6 +21,7 @@
     "create-weekly-shifts": "node scripts/createWeeklyShifts.js",
     "restore-backup": "node scripts/restoreBackup.js",
     "migrate:one-to-one": "node scripts/migrateSpecialToOneToOne.js",
+    "migrate:hourly-rates": "node scripts/backfillStaffHourlyRates.js",
     "build": "echo 'No build step required for Node.js backend'",
     "postinstall": "echo 'Backend dependencies installed successfully'",
     "heroku-postbuild": "echo 'Heroku build completed'"
