@@ -5,7 +5,7 @@ const Timetable = require('../models/Timetable');
 const Shift = require('../models/Shift');
 const Rota = require('../models/Rota');
 const User = require('../models/User');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const SchedulingConflictService = require('../services/schedulingConflictService');
 const { getShiftHourBreakdown } = require('../utils/shiftHours');
@@ -154,10 +154,65 @@ async function getShiftObjectIdsToRemoveForTimetable(timetable) {
   return Array.from(ids).map((id) => new mongoose.Types.ObjectId(id));
 }
 
+/**
+ * Homes in this timetable a non-admin may see: homes they work in (directly or
+ * via their service users) plus any home where they hold an assignment.
+ */
+function staffVisibleHomeIds(timetable, user) {
+  const timetableHomeIds = new Set((timetable.home_ids || []).map((h) => homeIdStr(h)));
+  const visible = new Set(getUserHomeIds(user).filter((id) => timetableHomeIds.has(id)));
+  const userId = String(user._id);
+  for (const week of timetable.weekly_rotas || []) {
+    for (const shift of week.shifts || []) {
+      if ((shift.assigned_staff || []).some((s) => homeIdStr(s.user_id) === userId)) {
+        visible.add(homeIdStr(shift.home_id));
+      }
+    }
+  }
+  return visible;
+}
+
+// Staff only see published timetables covering a home they work in.
+function canStaffViewTimetable(timetable, user) {
+  return timetable.status === 'published' && staffVisibleHomeIds(timetable, user).size > 0;
+}
+
+/** JSON copy of a timetable trimmed to the given homes, with totals recomputed. */
+function scopeTimetableToHomes(timetable, homeIds) {
+  const json = timetable.toJSON();
+  json.home_ids = (json.home_ids || []).filter((h) => homeIds.has(homeIdStr(h)));
+  let totalShifts = 0;
+  let totalHours = 0;
+  let totalAssignments = 0;
+  json.weekly_rotas = (json.weekly_rotas || []).map((week) => {
+    const shifts = (week.shifts || []).filter((s) => homeIds.has(homeIdStr(s.home_id)));
+    const hours = shifts.reduce((t, s) => t + (s.duration_hours || 0), 0);
+    const paid = shifts.reduce((t, s) => t + (s.paid_work_hours ?? s.duration_hours ?? 0), 0);
+    const assignments = shifts.reduce((t, s) => t + (s.assigned_staff?.length || 0), 0);
+    totalShifts += shifts.length;
+    totalHours += hours;
+    totalAssignments += assignments;
+    const { employment_distribution, ...rest } = week;
+    return {
+      ...rest,
+      shifts,
+      total_shifts: shifts.length,
+      total_hours: hours,
+      total_paid_work_hours: paid,
+      total_assignments: assignments
+    };
+  });
+  json.total_shifts = totalShifts;
+  json.total_hours = totalHours;
+  json.total_assignments = totalAssignments;
+  json.average_weekly_hours = json.weekly_rotas.length ? totalHours / json.weekly_rotas.length : 0;
+  return json;
+}
+
 // Get all timetables accessible to the user
 router.get('/', async (req, res) => {
   try {
-    const { status, home_id, start_date, end_date, user_access } = req.query;
+    const { status, home_id, start_date, end_date } = req.query;
     const user = req.user;
     
     // Build base query
@@ -187,36 +242,16 @@ router.get('/', async (req, res) => {
       .populate('generated_by', 'name email')
       .sort({ created_at: -1 });
     
-    // Filter by user access permissions
-    let accessibleTimetables;
-    
-    if (user_access === 'true') {
-      // For user access, show timetables where user has assignments OR meets access criteria
-      accessibleTimetables = timetables.filter(timetable => {
-        // First check if user has assignments in any of the weekly rotas
-        const hasAssignments = timetable.weekly_rotas.some(week => 
-          week.shifts.some(shift => 
-            shift.assigned_staff.some(staff => 
-              staff.user_id.toString() === user._id.toString()
-            )
-          )
-        );
-        
-        // If user has assignments, they can access the timetable
-        if (hasAssignments) {
-          return true;
-        }
-        
-        // Otherwise, check normal access permissions
-        return timetable.canUserAccess(user);
-      });
-    } else {
-      // Normal access control for admin view
-      accessibleTimetables = timetables.filter(timetable => 
-        timetable.canUserAccess(user)
-      );
+    if (user.role !== 'admin') {
+      // Staff: published timetables for the homes they work in, scoped to those homes
+      const scoped = timetables
+        .filter((timetable) => canStaffViewTimetable(timetable, user))
+        .map((timetable) => scopeTimetableToHomes(timetable, staffVisibleHomeIds(timetable, user)));
+      return res.json(scoped);
     }
-    
+
+    const accessibleTimetables = timetables.filter((timetable) => timetable.canUserAccess(user));
+
     res.json(accessibleTimetables);
   } catch (error) {
     console.error('Error fetching timetables:', error);
@@ -237,11 +272,13 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Timetable not found' });
     }
     
-    // Check if user can access this timetable
-    if (!timetable.canUserAccess(req.user)) {
-      return res.status(403).json({ error: 'Access denied to this timetable' });
+    if (req.user.role !== 'admin') {
+      if (!canStaffViewTimetable(timetable, req.user)) {
+        return res.status(403).json({ error: 'Access denied to this timetable' });
+      }
+      return res.json(scopeTimetableToHomes(timetable, staffVisibleHomeIds(timetable, req.user)));
     }
-    
+
     res.json(timetable);
   } catch (error) {
     console.error('Error fetching timetable:', error);
@@ -597,7 +634,10 @@ router.get('/:id/homes/:homeId/pdf', async (req, res) => {
       return res.status(404).json({ error: 'Timetable not found' });
     }
 
-    if (!timetable.canUserAccess(req.user)) {
+    const hasAccess = req.user.role === 'admin'
+      ? timetable.canUserAccess(req.user)
+      : canStaffViewTimetable(timetable, req.user) && staffVisibleHomeIds(timetable, req.user).has(homeId);
+    if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied to this timetable' });
     }
 
