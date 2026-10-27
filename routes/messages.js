@@ -189,4 +189,55 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Send the same message to several users at once. Each recipient gets their own
+// direct message, so replies land in the normal one-to-one threads.
+const MAX_BULK_RECIPIENTS = 200;
+
+router.post('/bulk', async (req, res) => {
+  try {
+    const { to_user_ids, body } = req.body;
+    if (!Array.isArray(to_user_ids) || to_user_ids.length === 0 || typeof body !== 'string') {
+      return res.status(400).json({ error: 'to_user_ids (non-empty array) and body are required' });
+    }
+    const trimmed = body.trim();
+    if (!trimmed) {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+
+    const uniqueIds = [...new Set(to_user_ids.map(String))];
+    if (uniqueIds.length > MAX_BULK_RECIPIENTS) {
+      return res.status(400).json({ error: `You can message at most ${MAX_BULK_RECIPIENTS} people at once` });
+    }
+    if (!uniqueIds.every((id) => mongoose.Types.ObjectId.isValid(id))) {
+      return res.status(400).json({ error: 'Invalid recipient' });
+    }
+
+    const recipients = await User.find({ _id: { $in: uniqueIds } }).select('name email role is_active');
+    if (recipients.length !== uniqueIds.length) {
+      return res.status(404).json({ error: 'One or more recipients were not found' });
+    }
+
+    const blocked = recipients.filter((r) => !canExchangeMessages(req.user, r));
+    if (blocked.length) {
+      return res.status(403).json({
+        error: `You cannot message: ${blocked.map((r) => r.name).join(', ')}`,
+      });
+    }
+
+    const docs = await Message.insertMany(
+      recipients.map((r) => ({
+        from_user_id: req.user._id,
+        to_user_id: r._id,
+        body: trimmed,
+        read_at: null,
+      }))
+    );
+
+    res.status(201).json({ sent: docs.length, messages: docs.map(serializeMessage) });
+  } catch (error) {
+    console.error('Error sending bulk message:', error);
+    res.status(500).json({ error: 'Failed to send messages' });
+  }
+});
+
 module.exports = router;
