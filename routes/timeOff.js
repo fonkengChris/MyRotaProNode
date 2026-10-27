@@ -12,6 +12,8 @@ const {
 } = require('../services/timeOffService');
 
 const APPROVER_ROLES = ['admin', 'key_worker', 'senior_staff'];
+// Only admins may approve or deny leave; key workers can view and manage requests but not decide them.
+const DECISION_ROLES = ['admin'];
 
 // Fields staff may set when submitting or editing a request. Status, approval and
 // limit-override fields only change through the approve/deny endpoints.
@@ -183,8 +185,12 @@ router.delete('/:id', async (req, res) => {
         return res.status(403).json({ error: 'You can only delete your own time-off requests' });
       }
       if (request.status !== 'pending') {
-        return res.status(400).json({ error: 'Only pending requests can be withdrawn; ask a manager to cancel approved leave' });
+        return res.status(400).json({ error: 'Only pending requests can be withdrawn; ask an admin to cancel approved leave' });
       }
+    }
+    // Cancelling approved leave reverses an approval decision, so it is admin-only like approve/deny.
+    if (request.status === 'approved' && !DECISION_ROLES.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Only an admin can cancel approved leave' });
     }
     await request.deleteOne();
     if (request.status === 'approved') {
@@ -197,7 +203,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // Approve time-off request
-router.post('/:id/approve', requireRole(APPROVER_ROLES), async (req, res) => {
+router.post('/:id/approve', requireRole(DECISION_ROLES), async (req, res) => {
   try {
     console.log('Approving time-off request:', req.params.id, 'by user:', req.user._id);
     
@@ -242,14 +248,6 @@ router.post('/:id/approve', requireRole(APPROVER_ROLES), async (req, res) => {
 
     if (limitConflict) {
       const message = buildHomeLeaveLimitMessage(limitConflict);
-      if (req.user.role !== 'admin') {
-        return res.status(403).json({
-          error: 'Admin permission required',
-          code: 'HOME_LEAVE_LIMIT',
-          details: `${message} Ask an admin to approve this request.`,
-          conflict: limitConflict
-        });
-      }
       if (req.body?.override_home_leave_limit !== true) {
         return res.status(409).json({
           error: 'Home leave limit exceeded',
@@ -288,7 +286,7 @@ router.post('/:id/approve', requireRole(APPROVER_ROLES), async (req, res) => {
 });
 
 // Deny time-off request
-router.post('/:id/deny', requireRole(APPROVER_ROLES), async (req, res) => {
+router.post('/:id/deny', requireRole(DECISION_ROLES), async (req, res) => {
   try {
     console.log('Denying time-off request:', req.params.id, 'by user:', req.user._id, 'reason:', req.body.reason);
     

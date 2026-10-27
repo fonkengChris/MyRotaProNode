@@ -50,10 +50,10 @@ describe('Home leave limit (default 3 staff on leave at once, admin override abo
     const res = await submit(staff[2], '2030-06-05', '2030-06-06');
     expect(res.status).toBe(201);
     expect(res.body.home_leave_limit_warning).toBeUndefined();
-    await approve(res.body._id, keyWorker).expect(200);
+    await approve(res.body._id, admin).expect(200);
   });
 
-  test('a fourth person is flagged and only an admin can approve, with explicit override', async () => {
+  test('a fourth person is flagged and needs an explicit admin override', async () => {
     await approvedLeave(staff[0], '2030-06-01', '2030-06-07');
     await approvedLeave(staff[1], '2030-06-03', '2030-06-10');
     await approvedLeave(staff[2], '2030-06-05', '2030-06-05');
@@ -63,10 +63,6 @@ describe('Home leave limit (default 3 staff on leave at once, admin override abo
     expect(res.body.status).toBe('pending');
     expect(res.body.home_leave_limit_warning.date).toBe('2030-06-05');
     expect(res.body.home_leave_limit_warning.staff_on_leave).toHaveLength(3);
-
-    const byKeyWorker = await approve(res.body._id, keyWorker);
-    expect(byKeyWorker.status).toBe(403);
-    expect(byKeyWorker.body.code).toBe('HOME_LEAVE_LIMIT');
 
     const prompt = await approve(res.body._id, admin);
     expect(prompt.status).toBe(409);
@@ -98,8 +94,8 @@ describe('Home leave limit (default 3 staff on leave at once, admin override abo
     expect(res.body.home_leave_limit_warning).toBeUndefined();
 
     for (const s of staff.slice(0, 3)) await approvedLeave(s, '2030-07-01', '2030-07-01');
-    const blocked = await approve(res.body._id, keyWorker);
-    expect(blocked.status).toBe(403);
+    const blocked = await approve(res.body._id, admin);
+    expect(blocked.status).toBe(409);
   });
 
   test('admins can change the limit on the solver rules page', async () => {
@@ -123,13 +119,14 @@ describe('Home leave limit (default 3 staff on leave at once, admin override abo
 });
 
 describe('Time-off requests cannot be self-approved', () => {
-  let home, worker, colleague, keyWorker;
+  let home, worker, colleague, keyWorker, admin;
 
   beforeEach(async () => {
     home = await createTestHome();
     worker = await createTestUser({ email: email('sw'), homes: [{ home_id: home._id }] });
     colleague = await createTestUser({ email: email('sw'), homes: [{ home_id: home._id }] });
     keyWorker = await createTestUser({ role: 'key_worker', email: email('kw'), homes: [{ home_id: home._id }] });
+    admin = await createTestUser({ role: 'admin', email: email('admin') });
   });
 
   const body = (user, extra = {}) => ({
@@ -177,11 +174,22 @@ describe('Time-off requests cannot be self-approved', () => {
 
     await TimeOffRequest.updateOne({ _id: created._id }, { status: 'approved' });
     await request(app).delete(`/api/timeoff/${created._id}`).set('Authorization', getAuthHeader(colleague._id)).expect(400);
-    await request(app).delete(`/api/timeoff/${created._id}`).set('Authorization', getAuthHeader(keyWorker._id)).expect(200);
+    await request(app).delete(`/api/timeoff/${created._id}`).set('Authorization', getAuthHeader(keyWorker._id)).expect(403);
+    await request(app).delete(`/api/timeoff/${created._id}`).set('Authorization', getAuthHeader(admin._id)).expect(200);
+  });
+
+  test('only admins can approve or deny leave', async () => {
+    const { body: created } = await create(worker, body(worker));
+    for (const role of ['key_worker', 'senior_staff', 'support_worker']) {
+      const as = role === 'key_worker' ? keyWorker : await createTestUser({ role, email: email(role), homes: [{ home_id: home._id }] });
+      await request(app).post(`/api/timeoff/${created._id}/approve`).set('Authorization', getAuthHeader(as._id)).expect(403);
+      await request(app).post(`/api/timeoff/${created._id}/deny`).set('Authorization', getAuthHeader(as._id)).send({ reason: 'No' }).expect(403);
+    }
+    await request(app).post(`/api/timeoff/${created._id}/deny`).set('Authorization', getAuthHeader(admin._id)).send({ reason: 'Short staffed' }).expect(200);
   });
 
   test('deleting approved leave frees those days, except days covered by other leave or edited since', async () => {
-    const approveAs = (id) => request(app).post(`/api/timeoff/${id}/approve`).set('Authorization', getAuthHeader(keyWorker._id));
+    const approveAs = (id) => request(app).post(`/api/timeoff/${id}/approve`).set('Authorization', getAuthHeader(admin._id));
     const { body: main } = await create(worker, body(worker, { start_date: '2030-10-01', end_date: '2030-10-04' }));
     const { body: other } = await create(worker, body(worker, { start_date: '2030-10-04', end_date: '2030-10-05' }));
     await approveAs(main._id).expect(200);
@@ -190,7 +198,7 @@ describe('Time-off requests cannot be self-approved', () => {
     // Staff member changed one leave day themselves after approval.
     await Availability.updateOne({ user_id: worker._id, date: '2030-10-02' }, { notes: 'Might come in' });
 
-    await request(app).delete(`/api/timeoff/${main._id}`).set('Authorization', getAuthHeader(keyWorker._id)).expect(200);
+    await request(app).delete(`/api/timeoff/${main._id}`).set('Authorization', getAuthHeader(admin._id)).expect(200);
 
     const left = (await Availability.find({ user_id: worker._id }).sort({ date: 1 })).map((a) => a.date);
     expect(left).toEqual(['2030-10-02', '2030-10-04', '2030-10-05']);
