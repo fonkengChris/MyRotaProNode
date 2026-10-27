@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const TimeOffRequest = require('../models/TimeOffRequest');
-const { requireRole } = require('../middleware/auth');
+const User = require('../models/User');
+const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const {
   findTimetableConflictForLeave,
   buildAutoDenialReason,
@@ -11,7 +12,9 @@ const {
   buildHomeLeaveLimitMessage
 } = require('../services/timeOffService');
 
-const APPROVER_ROLES = ['admin', 'key_worker', 'senior_staff'];
+// Roles that can see and manage other staff's leave. Senior staff are regular users here:
+// they only see and manage their own leave.
+const APPROVER_ROLES = ['admin', 'key_worker'];
 // Only admins may approve or deny leave; key workers can view and manage requests but not decide them.
 const DECISION_ROLES = ['admin'];
 
@@ -23,6 +26,24 @@ const pickEditable = (body) =>
   Object.fromEntries(EDITABLE_FIELDS.filter((f) => body?.[f] !== undefined).map((f) => [f, body[f]]));
 
 const isOwner = (request, user) => request.user_id?.toString() === user._id.toString();
+
+// Ids of the users whose leave `user` may see, or null for no restriction (admins).
+// Key workers see staff in the homes they reach (directly or via their service users);
+// everyone else, including senior staff, sees only their own leave.
+async function visibleUserIds(user) {
+  if (user.role === 'admin') return null;
+  const self = user._id.toString();
+  if (!APPROVER_ROLES.includes(user.role)) return [self];
+  const staffIds = await User.find({ 'homes.home_id': { $in: getUserHomeIds(user) } }).distinct('_id');
+  return [...new Set([self, ...staffIds.map(String)])];
+}
+
+async function canSeeUserLeave(user, targetUserId) {
+  const visible = await visibleUserIds(user);
+  return !visible || visible.includes(String(targetUserId));
+}
+
+const NO_ACCESS = { error: 'Access denied. You can only view leave for staff in your homes.' };
 
 async function applyHomeLeaveLimitWarning(request) {
   const limitConflict = await findHomeLeaveLimitConflict(
@@ -45,6 +66,14 @@ router.get('/', async (req, res) => {
       filter.start_date = {};
       if (start_date) filter.start_date.$gte = start_date;
       if (end_date) filter.start_date.$lte = end_date;
+    }
+
+    const visible = await visibleUserIds(req.user);
+    if (visible) {
+      if (user_id && !visible.includes(String(user_id))) {
+        return res.status(403).json(NO_ACCESS);
+      }
+      if (!user_id) filter.user_id = { $in: visible };
     }
     
     let requests = await TimeOffRequest.find(filter)
@@ -76,11 +105,13 @@ router.get('/:id', async (req, res) => {
   try {
     const request = await TimeOffRequest.findById(req.params.id)
       .populate('user_id', 'name email role')
-      .populate('approved_by', 'name email role')
-      .populate('home_id', 'name');
+      .populate('approved_by', 'name email role');
     
     if (!request) {
       return res.status(404).json({ error: 'Time-off request not found' });
+    }
+    if (!(await canSeeUserLeave(req.user, request.user_id?._id || request.user_id))) {
+      return res.status(403).json(NO_ACCESS);
     }
     
     res.json(request);
@@ -100,6 +131,9 @@ router.post('/', async (req, res) => {
 
     if (String(user_id) !== req.user._id.toString() && !APPROVER_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'You can only request time off for yourself' });
+    }
+    if (!(await canSeeUserLeave(req.user, user_id))) {
+      return res.status(403).json(NO_ACCESS);
     }
 
     const fields = { ...pickEditable(req.body), user_id };
@@ -150,6 +184,9 @@ router.put('/:id', async (req, res) => {
     if (!isOwner(request, req.user) && !APPROVER_ROLES.includes(req.user.role)) {
       return res.status(403).json({ error: 'You can only edit your own time-off requests' });
     }
+    if (!(await canSeeUserLeave(req.user, request.user_id))) {
+      return res.status(403).json(NO_ACCESS);
+    }
     if (request.status !== 'pending') {
       return res.status(400).json({ error: `Only pending requests can be edited; this one is ${request.status}` });
     }
@@ -187,6 +224,9 @@ router.delete('/:id', async (req, res) => {
       if (request.status !== 'pending') {
         return res.status(400).json({ error: 'Only pending requests can be withdrawn; ask an admin to cancel approved leave' });
       }
+    }
+    if (!(await canSeeUserLeave(req.user, request.user_id))) {
+      return res.status(403).json(NO_ACCESS);
     }
     // Cancelling approved leave reverses an approval decision, so it is admin-only like approve/deny.
     if (request.status === 'approved' && !DECISION_ROLES.includes(req.user.role)) {
@@ -342,6 +382,10 @@ router.post('/:id/deny', requireRole(DECISION_ROLES), async (req, res) => {
 // Get user time-off requests
 router.get('/user/:userId', async (req, res) => {
   try {
+    if (!(await canSeeUserLeave(req.user, req.params.userId))) {
+      return res.status(403).json(NO_ACCESS);
+    }
+
     const { status, start_date, end_date } = req.query;
     const filter = { user_id: req.params.userId };
     
@@ -354,8 +398,7 @@ router.get('/user/:userId', async (req, res) => {
     
     const requests = await TimeOffRequest.find(filter)
       .populate('user_id', 'name email role')
-      .populate('approved_by', 'name email role')
-      .populate('home_id', 'name');
+      .populate('approved_by', 'name email role');
     res.json(requests);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch user time-off requests' });
