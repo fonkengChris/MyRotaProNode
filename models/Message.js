@@ -24,6 +24,15 @@ const messageSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    edited_at: {
+      type: Date,
+      default: null,
+    },
+    // Soft delete: the original body is kept for record-keeping but never returned to clients.
+    deleted_at: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: false },

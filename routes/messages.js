@@ -11,17 +11,25 @@ function canExchangeMessages(viewer, target) {
   return true;
 }
 
+const toIso = (d) => (d ? new Date(d).toISOString() : null);
+
 function serializeMessage(doc) {
   const o = doc.toObject ? doc.toObject() : doc;
+  const deleted = Boolean(o.deleted_at);
   return {
     id: String(o._id),
     from_user_id: String(o.from_user_id),
     to_user_id: String(o.to_user_id),
-    body: o.body,
-    read_at: o.read_at ? o.read_at.toISOString() : null,
-    created_at: o.created_at ? o.created_at.toISOString() : null,
+    body: deleted ? '' : o.body,
+    read_at: toIso(o.read_at),
+    created_at: toIso(o.created_at),
+    edited_at: deleted ? null : toIso(o.edited_at),
+    deleted_at: toIso(o.deleted_at),
   };
 }
+
+// Messages created before soft delete existed have no deleted_at field at all.
+const isDeletedExpr = { $ne: [{ $ifNull: ['$deleted_at', null] }, null] };
 
 function serializeUserBrief(u) {
   return {
@@ -49,7 +57,11 @@ router.get('/conversations', async (req, res) => {
             $cond: [{ $eq: ['$from_user_id', myId] }, '$to_user_id', '$from_user_id'],
           },
           isUnreadForMe: {
-            $and: [{ $eq: ['$to_user_id', myId] }, { $eq: ['$read_at', null] }],
+            $and: [
+              { $eq: ['$to_user_id', myId] },
+              { $eq: ['$read_at', null] },
+              { $not: [isDeletedExpr] },
+            ],
           },
         },
       },
@@ -60,6 +72,7 @@ router.get('/conversations', async (req, res) => {
           last_body: { $first: '$body' },
           last_at: { $first: '$created_at' },
           last_from_me: { $first: { $eq: ['$from_user_id', myId] } },
+          last_deleted: { $first: isDeletedExpr },
           unread_count: { $sum: { $cond: ['$isUnreadForMe', 1, 0] } },
         },
       },
@@ -80,7 +93,8 @@ router.get('/conversations', async (req, res) => {
         if (!canExchangeMessages(req.user, u)) return null;
         return {
           other_user: serializeUserBrief(u),
-          last_body: r.last_body,
+          last_body: r.last_deleted ? '' : r.last_body,
+          last_deleted: r.last_deleted,
           last_at: r.last_at.toISOString(),
           last_from_me: r.last_from_me,
           unread_count: r.unread_count,
@@ -131,14 +145,7 @@ router.get('/thread/:userId', async (req, res) => {
       .limit(limit)
       .lean();
 
-    const serialized = messages.map((m) => ({
-      id: String(m._id),
-      from_user_id: String(m.from_user_id),
-      to_user_id: String(m.to_user_id),
-      body: m.body,
-      read_at: m.read_at ? new Date(m.read_at).toISOString() : null,
-      created_at: m.created_at ? new Date(m.created_at).toISOString() : null,
-    }));
+    const serialized = messages.map(serializeMessage);
 
     res.json({
       other_user: serializeUserBrief(partner),
@@ -186,6 +193,70 @@ router.post('/', async (req, res) => {
   } catch (error) {
     console.error('Error sending message:', error);
     res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Loads a message the current user sent, or responds with the right error.
+async function findOwnMessage(req, res) {
+  const { id } = req.params;
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    res.status(400).json({ error: 'Invalid message id' });
+    return null;
+  }
+  const msg = await Message.findById(id);
+  if (!msg) {
+    res.status(404).json({ error: 'Message not found' });
+    return null;
+  }
+  if (!msg.from_user_id.equals(req.user._id)) {
+    res.status(403).json({ error: 'You can only change messages you sent' });
+    return null;
+  }
+  if (msg.deleted_at) {
+    res.status(410).json({ error: 'This message has been deleted' });
+    return null;
+  }
+  return msg;
+}
+
+// Edit a message you sent
+router.patch('/:id', async (req, res) => {
+  try {
+    const { body } = req.body;
+    if (typeof body !== 'string' || !body.trim()) {
+      return res.status(400).json({ error: 'Message cannot be empty' });
+    }
+    const msg = await findOwnMessage(req, res);
+    if (!msg) return;
+
+    const trimmed = body.trim();
+    if (trimmed !== msg.body) {
+      msg.body = trimmed;
+      msg.edited_at = new Date();
+      await msg.save();
+    }
+    res.json(serializeMessage(msg));
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ error: Object.values(error.errors)[0].message });
+    }
+    console.error('Error editing message:', error);
+    res.status(500).json({ error: 'Failed to edit message' });
+  }
+});
+
+// Delete a message you sent (for both people in the conversation)
+router.delete('/:id', async (req, res) => {
+  try {
+    const msg = await findOwnMessage(req, res);
+    if (!msg) return;
+
+    msg.deleted_at = new Date();
+    await msg.save();
+    res.json(serializeMessage(msg));
+  } catch (error) {
+    console.error('Error deleting message:', error);
+    res.status(500).json({ error: 'Failed to delete message' });
   }
 });
 
