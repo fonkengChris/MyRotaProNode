@@ -1,7 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const Availability = require('../models/Availability');
-const { requireRole, requireOwnershipOrPermission } = require('../middleware/auth');
+
+// Admins manage anyone's availability; part-time/bank staff manage only their own.
+const canManageAvailabilityFor = (actor, targetUserId) =>
+  actor.role === 'admin' ||
+  (String(targetUserId) === actor._id.toString() && ['parttime', 'bank'].includes(actor.type));
+
+const forbidden = (res, actor) => res.status(403).json({
+  error: actor.type === 'fulltime' && actor.role !== 'admin'
+    ? 'Your availability is managed by an admin'
+    : 'You can only manage your own availability',
+  code: 'AVAILABILITY_FORBIDDEN'
+});
 
 // Get all availability records
 router.get('/', async (req, res) => {
@@ -40,8 +51,10 @@ router.get('/:id', async (req, res) => {
 // Create new availability
 router.post('/', async (req, res) => {
   try {
+    if (!canManageAvailabilityFor(req.user, req.body.user_id)) {
+      return forbidden(res, req.user);
+    }
 
-    
     // Check if there's already an availability record for this user and date
     const existingAvailability = await Availability.findOne({
       user_id: req.body.user_id,
@@ -84,18 +97,24 @@ router.post('/', async (req, res) => {
 });
 
 // Update availability
-router.put('/:id', requireOwnershipOrPermission, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const availability = await Availability.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-    
-    if (!availability) {
+    const existing = await Availability.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ error: 'Availability record not found' });
     }
-    
+    if (!canManageAvailabilityFor(req.user, existing.user_id)) {
+      return forbidden(res, req.user);
+    }
+
+    // A record can't be reassigned to another staff member.
+    const { user_id, ...updates } = req.body;
+    const availability = await Availability.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { new: true, runValidators: true }
+    );
+
     res.json(availability);
   } catch (error) {
     res.status(400).json({ error: 'Failed to update availability record' });
@@ -103,12 +122,16 @@ router.put('/:id', requireOwnershipOrPermission, async (req, res) => {
 });
 
 // Delete availability
-router.delete('/:id', requireOwnershipOrPermission, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const availability = await Availability.findByIdAndDelete(req.params.id);
+    const availability = await Availability.findById(req.params.id);
     if (!availability) {
       return res.status(404).json({ error: 'Availability record not found' });
     }
+    if (!canManageAvailabilityFor(req.user, availability.user_id)) {
+      return forbidden(res, req.user);
+    }
+    await availability.deleteOne();
     res.json({ message: 'Availability record deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete availability record' });
