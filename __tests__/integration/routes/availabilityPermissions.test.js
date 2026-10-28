@@ -113,3 +113,30 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     expect(String(res.body.user_id)).toBe(parttime._id.toString());
   });
 });
+
+describe('Availability "No preference"', () => {
+  it('saves a blank or null preferred shift type as none, and clears a preference on update', async () => {
+    const parttime = await createTestUser({ type: 'parttime', email: email('np') });
+    const post = (preferred_shift_type, date) =>
+      request(app)
+        .post('/api/availability')
+        .set('Authorization', getAuthHeader(parttime._id))
+        .send({ user_id: parttime._id.toString(), date, start_time: '09:00', end_time: '17:00', is_available: true, preferred_shift_type });
+
+    const blank = await post('', '2030-02-01');
+    expect(blank.status).toBe(201);
+    expect(blank.body.preferred_shift_type).toBe('none');
+
+    const nul = await post(null, '2030-02-02');
+    expect(nul.status).toBe(201);
+    expect(nul.body.preferred_shift_type).toBe('none');
+
+    const withPref = await post('day', '2030-02-03');
+    const cleared = await request(app)
+      .put(`/api/availability/${withPref.body._id}`)
+      .set('Authorization', getAuthHeader(parttime._id))
+      .send({ preferred_shift_type: '' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.preferred_shift_type).toBe('none');
+  });
+});

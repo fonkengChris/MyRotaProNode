@@ -779,9 +779,8 @@ class AISolver {
           // Staff is available (either no record exists or explicitly marked as available)
           
           // Apply soft constraints if availability data exists
-          if (availability && availability.preferred_shift_types && 
-              availability.preferred_shift_types.length > 0 &&
-              !availability.preferred_shift_types.includes(shift.shift_type)) {
+          const preferredType = availability && availability.preferred_shift_type;
+          if (preferredType && preferredType !== 'none' && preferredType !== shift.shift_type) {
             score -= scoring.non_preferred_shift_type_penalty;
           }
           

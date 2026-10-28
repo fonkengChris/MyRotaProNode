@@ -28,7 +28,10 @@ const availabilitySchema = new mongoose.Schema({
   preferred_shift_type: {
     type: String,
     enum: ['morning', 'day', 'afternoon', 'evening', 'night-wake', 'night-sleep', 'night', 'overtime', 'long_day', 'one_to_one', 'none'],
-    default: null
+    // 'none' = no preference. Blank/null (the form's "No preference") are stored as 'none'
+    // rather than failing the enum check.
+    default: 'none',
+    set: (v) => (v === '' || v === null || v === undefined ? 'none' : v)
   },
   notes: {
     type: String,
@@ -71,7 +74,7 @@ availabilitySchema.virtual('publicInfo').get(function() {
 
 // Method to check if staff prefers specific shift type
 availabilitySchema.methods.prefersShiftType = function(shiftType) {
-  if (!this.preferred_shift_type) {
+  if (!this.preferred_shift_type || this.preferred_shift_type === 'none') {
     return true; // No preference means available for any
   }
   

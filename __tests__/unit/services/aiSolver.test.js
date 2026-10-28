@@ -191,3 +191,33 @@ describe('AISolver swap validation', () => {
     expect(rows[0].assignments[0].user_id).toBe('a');
   });
 });
+
+describe('AISolver availability preferences', () => {
+  const staffMember = { _id: 'u1', name: 'u1', type: 'parttime', role: 'support_worker', homes: [{ home_id: 'home1', is_default: true }] };
+  const availability = (extra) => ({
+    user_id: 'u1', date: '2026-10-05', start_time: '06:00', end_time: '22:00', is_available: true, ...extra
+  });
+  const scoreFor = (s, availabilityData) => {
+    const solver = makeSolver();
+    return solver.buildMultiHomeConstraintMatrix([s], [staffMember], availabilityData, [], ['home1'])['u1'][s._id];
+  };
+
+  test('penalises a shift type other than the preferred one', () => {
+    const s = shift('2026-10-05', '08:00', '16:00', { shift_type: 'day' });
+    const penalty = SolverSettings.DEFAULTS.scoring.non_preferred_shift_type_penalty;
+    const matching = scoreFor(s, [availability({ preferred_shift_type: 'day' })]);
+    const other = scoreFor(s, [availability({ preferred_shift_type: 'night-wake' })]);
+    expect(matching - other).toBe(penalty);
+  });
+
+  test("'none' means no preference, so no penalty", () => {
+    const s = shift('2026-10-05', '08:00', '16:00', { shift_type: 'day' });
+    expect(scoreFor(s, [availability({ preferred_shift_type: 'none' })]))
+      .toBe(scoreFor(s, [availability({ preferred_shift_type: 'day' })]));
+  });
+
+  test('a day marked unavailable scores zero', () => {
+    const s = shift('2026-10-05', '08:00', '16:00');
+    expect(scoreFor(s, [availability({ is_available: false })])).toBe(0);
+  });
+});
