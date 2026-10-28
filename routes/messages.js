@@ -2,13 +2,38 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Message = require('../models/Message');
 const User = require('../models/User');
+const ServiceUser = require('../models/ServiceUser');
+const { getUserHomeIds } = require('../middleware/auth');
 
 const router = express.Router();
 
-function canExchangeMessages(viewer, target) {
-  if (!target || !target.is_active) return false;
-  if (viewer._id.equals(target._id)) return false;
-  return true;
+// Who a user may message. Admins reach everyone. Everyone else reaches management
+// (admins), staff attached to one of their homes, and key workers whose service
+// users live in one of those homes. Key workers' own homes already include their
+// service users' homes (getUserHomeIds), so the rule stays symmetric.
+async function messageableFilter(viewer) {
+  const base = { is_active: true, _id: { $ne: viewer._id } };
+  if (viewer.role === 'admin') return base;
+
+  const homeIds = getUserHomeIds(viewer);
+  const keyWorkerIds = homeIds.length
+    ? await ServiceUser.distinct('key_worker_ids', { home_id: { $in: homeIds }, is_active: true })
+    : [];
+  return {
+    ...base,
+    $or: [
+      { role: User.roleQueryValue('admin') },
+      { 'homes.home_id': { $in: homeIds } },
+      { _id: { $in: keyWorkerIds } },
+    ],
+  };
+}
+
+// Subset of the given user ids the viewer may message, as a Set of id strings.
+async function messageableIds(viewer, ids) {
+  const filter = await messageableFilter(viewer);
+  const allowed = await User.find({ $and: [filter, { _id: { $in: ids } }] }).select('_id').lean();
+  return new Set(allowed.map((u) => String(u._id)));
 }
 
 const toIso = (d) => (d ? new Date(d).toISOString() : null);
@@ -39,6 +64,20 @@ function serializeUserBrief(u) {
     role: u.role,
   };
 }
+
+// People the current user may start a conversation with
+router.get('/recipients', async (req, res) => {
+  try {
+    const users = await User.find(await messageableFilter(req.user))
+      .select('name email role')
+      .sort({ name: 1 })
+      .lean();
+    res.json(users.map(serializeUserBrief));
+  } catch (error) {
+    console.error('Error listing message recipients:', error);
+    res.status(500).json({ error: 'Failed to load recipients' });
+  }
+});
 
 // List conversation summaries for the current user
 router.get('/conversations', async (req, res) => {
@@ -85,12 +124,12 @@ router.get('/conversations', async (req, res) => {
       .lean();
 
     const userMap = new Map(users.map((u) => [String(u._id), u]));
+    const allowed = await messageableIds(req.user, otherIds);
 
     const conversations = rows
       .map((r) => {
         const u = userMap.get(String(r._id));
-        if (!u || !u.is_active) return null;
-        if (!canExchangeMessages(req.user, u)) return null;
+        if (!u || !allowed.has(String(u._id))) return null;
         return {
           other_user: serializeUserBrief(u),
           last_body: r.last_deleted ? '' : r.last_body,
@@ -122,7 +161,7 @@ router.get('/thread/:userId', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (!canExchangeMessages(req.user, partner)) {
+    if (!(await messageableIds(req.user, [partner._id])).has(String(partner._id))) {
       return res.status(403).json({ error: 'You cannot message this user' });
     }
 
@@ -178,7 +217,7 @@ router.post('/', async (req, res) => {
       return res.status(404).json({ error: 'Recipient not found' });
     }
 
-    if (!canExchangeMessages(req.user, recipient)) {
+    if (!(await messageableIds(req.user, [recipient._id])).has(String(recipient._id))) {
       return res.status(403).json({ error: 'You cannot message this user' });
     }
 
@@ -288,7 +327,8 @@ router.post('/bulk', async (req, res) => {
       return res.status(404).json({ error: 'One or more recipients were not found' });
     }
 
-    const blocked = recipients.filter((r) => !canExchangeMessages(req.user, r));
+    const allowed = await messageableIds(req.user, uniqueIds);
+    const blocked = recipients.filter((r) => !allowed.has(String(r._id)));
     if (blocked.length) {
       return res.status(403).json({
         error: `You cannot message: ${blocked.map((r) => r.name).join(', ')}`,

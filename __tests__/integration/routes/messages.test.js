@@ -6,7 +6,8 @@ process.env.JWT_EXPIRES_IN = '7d';
 const request = require('supertest');
 const app = require('../../../server');
 const Message = require('../../../models/Message');
-const { createTestUser, getAuthHeader } = require('../../../tests/utils/testHelpers');
+const ServiceUser = require('../../../models/ServiceUser');
+const { createTestUser, createTestHome, getAuthHeader } = require('../../../tests/utils/testHelpers');
 
 let seq = 0;
 const email = (prefix) => `${prefix}${Date.now()}${seq++}@example.com`;
@@ -93,5 +94,44 @@ describe('messages: bulk send, edit and delete', () => {
 
     const convs = await request(app).get('/api/messages/conversations').set('Authorization', getAuthHeader(bob._id));
     expect(convs.body[0].unread_count).toBe(0);
+  });
+});
+
+describe('messages: who support workers can reach', () => {
+  let admin, worker, houseMate, otherHouse, keyWorker, otherKeyWorker;
+
+  beforeEach(async () => {
+    const homeA = await createTestHome({ name: 'Home A' });
+    const homeB = await createTestHome({ name: 'Home B' });
+    admin = await createTestUser({ name: 'Admin', role: 'admin', email: email('admin'), homes: [] });
+    worker = await createTestUser({ name: 'Worker', role: 'support_worker', email: email('w'), homes: [{ home_id: homeA._id }] });
+    houseMate = await createTestUser({ name: 'Mate', role: 'support_worker', email: email('m'), homes: [{ home_id: homeA._id }] });
+    otherHouse = await createTestUser({ name: 'Other', role: 'support_worker', email: email('o'), homes: [{ home_id: homeB._id }] });
+    // Key workers aren't attached to houses; they reach them through service users.
+    keyWorker = await createTestUser({ name: 'KW', role: 'key_worker', email: email('kw'), homes: [] });
+    otherKeyWorker = await createTestUser({ name: 'KW2', role: 'key_worker', email: email('kw2'), homes: [] });
+    await ServiceUser.create({ name: 'Alex', home_id: homeA._id, key_worker_ids: [keyWorker._id] });
+    await ServiceUser.create({ name: 'Blake', home_id: homeB._id, key_worker_ids: [otherKeyWorker._id] });
+  });
+
+  const recipientIds = async (as) =>
+    (await request(app).get('/api/messages/recipients').set('Authorization', getAuthHeader(as._id)).expect(200))
+      .body.map((u) => u.id).sort();
+  const sendStatus = async (from, to) =>
+    (await request(app).post('/api/messages').set('Authorization', getAuthHeader(from._id)).send({ to_user_id: String(to._id), body: 'Hi' })).status;
+
+  test('support workers see house colleagues, their service users\' key workers and management', async () => {
+    expect(await recipientIds(worker)).toEqual([admin, houseMate, keyWorker].map((u) => String(u._id)).sort());
+  });
+
+  test('key workers can reach staff in their service users\' homes', async () => {
+    expect(await recipientIds(keyWorker)).toEqual([admin, worker, houseMate].map((u) => String(u._id)).sort());
+  });
+
+  test('sending outside that scope is refused', async () => {
+    expect(await sendStatus(worker, keyWorker)).toBe(201);
+    expect(await sendStatus(worker, admin)).toBe(201);
+    expect(await sendStatus(worker, otherHouse)).toBe(403);
+    expect(await sendStatus(worker, otherKeyWorker)).toBe(403);
   });
 });
