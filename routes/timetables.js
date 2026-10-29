@@ -7,8 +7,7 @@ const Rota = require('../models/Rota');
 const User = require('../models/User');
 const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
-const SchedulingConflictService = require('../services/schedulingConflictService');
-const { getShiftHourBreakdown } = require('../utils/shiftHours');
+const { buildTimetableSnapshot, applySnapshot } = require('../services/timetableSync');
 const { createTimetableHomePdf, homeIdStr, safeFilePart } = require('../utils/timetablePdf');
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -691,11 +690,6 @@ async function generateTimetableAsync(timetableId, userId) {
     const AISolver = require('../services/aiSolver');
     const aiSolver = new AISolver();
     
-    let totalShifts = 0;
-    let totalHours = 0;
-    let totalAssignments = 0;
-    let totalConflicts = 0;
-    const weeklyRotas = [];
     const generationErrors = [];
     
     // One solver run for the full timetable range so weeks are solved in order with fairness
@@ -731,127 +725,20 @@ async function generateTimetableAsync(timetableId, userId) {
       });
     }
 
-    for (let week = 0; week < timetable.total_weeks; week++) {
-      try {
-        const weekStart = new Date(timetable.start_date);
-        weekStart.setDate(weekStart.getDate() + (week * 7));
+    const snapshot = await buildTimetableSnapshot(timetable);
+    generationErrors.push(...snapshot.errors);
 
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekEnd.getDate() + 6);
-
-        console.log(`Building snapshot week ${week + 1}/${timetable.total_weeks}: ${weekStart.toISOString().split('T')[0]} to ${weekEnd.toISOString().split('T')[0]}`);
-
-        // Get shifts for this week
-        const weekShifts = await Shift.find({
-          home_id: { $in: timetable.home_ids },
-          date: {
-            $gte: weekStart.toISOString().split('T')[0],
-            $lte: weekEnd.toISOString().split('T')[0]
-          }
-        }).populate('assigned_staff.user_id', 'name role type');
-        
-        // Check for conflicts in this week
-        let weekConflicts = 0;
-        for (const homeId of timetable.home_ids) {
-          try {
-            const conflicts = await SchedulingConflictService.getHomeConflicts(
-              homeId,
-              weekStart.toISOString().split('T')[0],
-              weekEnd.toISOString().split('T')[0]
-            );
-            weekConflicts += conflicts.totalConflicts;
-          } catch (error) {
-            console.warn(`Failed to check conflicts for home ${homeId}:`, error.message);
-          }
-        }
-        
-        totalConflicts += weekConflicts;
-        
-        // Calculate week statistics
-        const weekTotalShifts = weekShifts.length;
-        const weekTotalHours = weekShifts.reduce((sum, shift) => sum + (shift.duration_hours || 0), 0);
-        const weekTotalPaidWorkHours = weekShifts.reduce(
-          (sum, shift) => sum + getShiftHourBreakdown(shift).paid_work_hours,
-          0
-        );
-        const weekTotalAssignments = weekShifts.reduce((sum, shift) => sum + (shift.assigned_staff?.length || 0), 0);
-        
-        // Calculate employment distribution for this week
-        const employmentDistribution = calculateEmploymentDistribution(weekShifts);
-        
-        // Create weekly rota snapshot
-        const weeklyRota = {
-          week_start_date: weekStart,
-          week_end_date: weekEnd,
-          week_number: week + 1,
-          shifts: weekShifts.map(shift => {
-            const br = getShiftHourBreakdown(shift);
-            return {
-              shift_id: shift._id,
-              home_id: shift.home_id,
-              service_id: shift.service_id,
-              date: shift.date,
-              start_time: shift.start_time,
-              end_time: shift.end_time,
-              shift_type: shift.shift_type,
-              required_staff_count: shift.required_staff_count,
-              assigned_staff: shift.assigned_staff.map(assignment => ({
-                user_id: assignment.user_id._id,
-                name: assignment.user_id.name,
-                role: assignment.user_id.role,
-                type: assignment.user_id.type,
-                status: assignment.status,
-                assigned_at: assignment.assigned_at
-              })),
-              notes: shift.notes,
-              duration_hours: br.duration_hours,
-              paid_work_hours: br.paid_work_hours,
-              sleep_in_hours: br.sleep_in_hours
-            };
-          }),
-          total_shifts: weekTotalShifts,
-          total_hours: weekTotalHours,
-          total_paid_work_hours: weekTotalPaidWorkHours,
-          total_assignments: weekTotalAssignments,
-          employment_distribution: employmentDistribution
-        };
-        
-        weeklyRotas.push(weeklyRota);
-        
-        totalShifts += weekTotalShifts;
-        totalHours += weekTotalHours;
-        totalAssignments += weekTotalAssignments;
-        
-        console.log(`Week ${week + 1} completed: ${weekTotalShifts} shifts, ${weekTotalHours} hours, ${weekTotalAssignments} assignments, ${weekConflicts} conflicts`);
-        
-      } catch (error) {
-        console.error(`Error generating week ${week + 1}:`, error);
-        generationErrors.push({
-          week: week + 1,
-          error: error.message,
-          timestamp: new Date()
-        });
-        
-        // Continue with next week even if this one fails
-      }
-    }
-    
     // Update timetable with results
     const generationCompletedAt = new Date();
     const generationDuration = generationCompletedAt - timetable.generation_started_at;
-    
-    timetable.weekly_rotas = weeklyRotas;
-    timetable.total_shifts = totalShifts;
-    timetable.total_hours = totalHours;
-    timetable.total_assignments = totalAssignments;
-    timetable.average_weekly_hours = timetable.total_weeks > 0 ? totalHours / timetable.total_weeks : 0;
-    timetable.conflicts_detected = totalConflicts;
+
+    applySnapshot(timetable, snapshot);
     timetable.generation_errors = generationErrors;
     timetable.generation_completed_at = generationCompletedAt;
     timetable.generation_duration_ms = generationDuration;
     
     // Set status based on results
-    if (generationErrors.length === 0 && totalConflicts === 0) {
+    if (generationErrors.length === 0 && snapshot.totalConflicts === 0) {
       timetable.status = 'generated';
     } else {
       timetable.status = 'draft'; // Keep as draft if there are errors or conflicts
@@ -859,7 +746,7 @@ async function generateTimetableAsync(timetableId, userId) {
     
     await timetable.save();
     
-    console.log(`Timetable generation completed for ${timetable.name}: ${totalShifts} shifts, ${totalHours} hours, ${totalAssignments} assignments, ${totalConflicts} conflicts, ${generationErrors.length} errors`);
+    console.log(`Timetable generation completed for ${timetable.name}: ${snapshot.totalShifts} shifts, ${snapshot.totalHours} hours, ${snapshot.totalAssignments} assignments, ${snapshot.totalConflicts} conflicts, ${generationErrors.length} errors`);
     
   } catch (error) {
     console.error('Timetable generation failed:', error);
@@ -880,49 +767,6 @@ async function generateTimetableAsync(timetableId, userId) {
       console.error('Failed to update timetable with error:', updateError);
     }
   }
-}
-
-// Helper function to calculate employment distribution
-function calculateEmploymentDistribution(shifts) {
-  const distribution = {
-    fulltime: { total_hours: 0, staff_count: 0, average_hours: 0 },
-    parttime: { total_hours: 0, staff_count: 0, average_hours: 0 },
-    bank: { total_hours: 0, staff_count: 0, average_hours: 0 }
-  };
-  
-  const staffHours = {};
-  
-  shifts.forEach(shift => {
-    if (shift.assigned_staff && shift.assigned_staff.length > 0) {
-      shift.assigned_staff.forEach(assignment => {
-        const staffId = assignment.user_id._id.toString();
-        const staffType = assignment.user_id.type;
-        const hours = getShiftHourBreakdown(shift).paid_work_hours;
-        
-        if (!staffHours[staffId]) {
-          staffHours[staffId] = { type: staffType, hours: 0 };
-        }
-        staffHours[staffId].hours += hours;
-      });
-    }
-  });
-  
-  // Calculate totals by type
-  Object.values(staffHours).forEach(staff => {
-    if (distribution[staff.type]) {
-      distribution[staff.type].total_hours += staff.hours;
-      distribution[staff.type].staff_count++;
-    }
-  });
-  
-  // Calculate averages
-  Object.keys(distribution).forEach(type => {
-    if (distribution[type].staff_count > 0) {
-      distribution[type].average_hours = distribution[type].total_hours / distribution[type].staff_count;
-    }
-  });
-  
-  return distribution;
 }
 
 module.exports = router;

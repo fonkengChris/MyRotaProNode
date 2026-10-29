@@ -314,6 +314,71 @@ shiftSchema.methods.removeStaff = function(staffId) {
   return this;
 };
 
+// --- Keep generated timetables in step with shift changes ---------------------------------
+// Every write path (doc save/delete, query updates/deletes, insertMany) reports the
+// home/date of the shifts it touched; timetableSync debounces and rebuilds the snapshots.
+// Required lazily because timetableSync itself requires this model.
+function queueTimetableSync(changes) {
+  if (!changes.length) return;
+  require('../services/timetableSync')
+    .queueTimetableSyncForShifts(changes)
+    .catch(error => console.error('Failed to queue timetable sync:', error));
+}
+
+// Paths that appear in a timetable snapshot. Attendance bookkeeping (reminder timestamps,
+// clock times) is deliberately excluded so the per-minute scheduler doesn't trigger rebuilds.
+const SNAPSHOT_PATH = /^(home_id|service_id|date|start_time|end_time|shift_type|required_staff_count|notes|is_active|assigned_staff(\.\d+(\.(user_id|status|assigned_at))?)?)$/;
+
+shiftSchema.post('init', function() {
+  this.$locals.syncOrigin = { home_id: this.home_id, date: this.date };
+});
+
+shiftSchema.pre('save', function(next) {
+  this.$locals.affectsTimetable = this.isNew || this.directModifiedPaths().some(p => SNAPSHOT_PATH.test(p));
+  next();
+});
+
+shiftSchema.post('save', function(doc) {
+  if (!doc.$locals.affectsTimetable) return;
+  const changes = [{ home_id: doc.home_id, date: doc.date }];
+  if (doc.$locals.syncOrigin) changes.push(doc.$locals.syncOrigin); // shift moved home/date
+  doc.$locals.syncOrigin = { home_id: doc.home_id, date: doc.date };
+  queueTimetableSync(changes);
+});
+
+shiftSchema.post('deleteOne', { document: true, query: false }, function(doc) {
+  queueTimetableSync([{ home_id: doc.home_id, date: doc.date }]);
+});
+
+shiftSchema.post('insertMany', function(docs) {
+  queueTimetableSync((docs || []).map(d => ({ home_id: d.home_id, date: d.date })));
+});
+
+const QUERY_WRITE_OPS = ['updateOne', 'updateMany', 'findOneAndUpdate', 'deleteOne', 'deleteMany', 'findOneAndDelete'];
+
+shiftSchema.pre(QUERY_WRITE_OPS, { document: false, query: true }, async function() {
+  // Capture what the filter matches before the write, since deletes leave nothing to read after.
+  this._timetableSyncTargets = await this.model
+    .find(this.getFilter())
+    .select('_id home_id date')
+    .lean();
+});
+
+shiftSchema.post(QUERY_WRITE_OPS, { document: false, query: true }, async function() {
+  const before = this._timetableSyncTargets || [];
+  if (!before.length) return;
+  const changes = before.map(s => ({ home_id: s.home_id, date: s.date }));
+  if (!this.op.startsWith('delete') && !this.op.endsWith('Delete')) {
+    // Updates may move a shift to another home/date; include where it ended up too.
+    const after = await this.model
+      .find({ _id: { $in: before.map(s => s._id) } })
+      .select('home_id date')
+      .lean();
+    changes.push(...after.map(s => ({ home_id: s.home_id, date: s.date })));
+  }
+  queueTimetableSync(changes);
+});
+
 // Ensure virtual fields are serialized
 shiftSchema.set('toJSON', { virtuals: true });
 shiftSchema.set('toObject', { virtuals: true });
