@@ -87,14 +87,15 @@ function shiftDateOffset(date, days) {
  * Active shifts the user is assigned to on date-1 .. date+1 whose real window overlaps
  * `window` (so cross-midnight shifts are found). Returns all types; callers filter.
  */
-async function findOverlappingAssignedShifts(userId, date, window, { excludeShiftId } = {}) {
+async function findOverlappingAssignedShifts(userId, date, window, { excludeShiftId, excludeShiftIds = [] } = {}) {
   const Shift = require('../models/Shift');
   const filter = {
     date: { $gte: shiftDateOffset(date, -1), $lte: shiftDateOffset(date, 1) },
     'assigned_staff.user_id': userId,
     is_active: { $ne: false },
   };
-  if (excludeShiftId) filter._id = { $ne: excludeShiftId };
+  const excluded = [excludeShiftId, ...excludeShiftIds].filter(Boolean);
+  if (excluded.length) filter._id = { $nin: excluded };
   const shifts = await Shift.find(filter);
   return shifts.filter((s) => windowsOverlap(shiftWindow(s), window));
 }

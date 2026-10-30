@@ -25,10 +25,10 @@ const shiftSwapSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'Target user ID is required']
   },
-  // Status of the swap request
+  // Status of the swap request. 'expired': left pending past `expires_at` (see expireStale).
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected', 'cancelled', 'completed'],
+    enum: ['pending', 'approved', 'rejected', 'cancelled', 'completed', 'expired'],
     default: 'pending'
   },
   // Message from requester
@@ -40,6 +40,20 @@ const shiftSwapSchema = new mongoose.Schema({
   response_message: {
     type: String,
     maxlength: [500, 'Response message cannot exceed 500 characters']
+  },
+  // Minimum-rest breaches the swap would cause (messages). A swap may break the rest rule
+  // only with both staff's consent: the requester when sending, the target when accepting.
+  rest_warnings: {
+    type: [String],
+    default: []
+  },
+  requester_rest_consent_at: {
+    type: Date,
+    default: null
+  },
+  target_rest_consent_at: {
+    type: Date,
+    default: null
   },
   // Conflict check results
   conflict_check: {
@@ -64,7 +78,8 @@ const shiftSwapSchema = new mongoose.Schema({
   completed_at: {
     type: Date
   },
-  // Expiration time for the request (default 7 days)
+  // Expiration time for the request (default 7 days; the create route brings it forward to
+  // the start of the earlier shift, after which the swap can no longer happen)
   expires_at: {
     type: Date,
     default: function() {
@@ -159,6 +174,16 @@ shiftSwapSchema.methods.complete = function() {
   return this;
 };
 
+// Close pending requests whose `expires_at` has passed, so they stop blocking new swaps of the
+// same shifts and show as expired. Called before swap reads and checks.
+shiftSwapSchema.statics.expireStale = function() {
+  const now = new Date();
+  return this.updateMany(
+    { status: 'pending', expires_at: { $lte: now } },
+    { $set: { status: 'expired', responded_at: now } }
+  );
+};
+
 // Static method to find active swaps for a user
 shiftSwapSchema.statics.findActiveSwapsForUser = function(userId) {
   return this.find({
@@ -187,7 +212,7 @@ shiftSwapSchema.statics.findSwapHistoryForUser = function(userId, limit = 50) {
       { requester_id: userId },
       { target_user_id: userId }
     ],
-    status: { $in: ['approved', 'rejected', 'cancelled', 'completed'] }
+    status: { $in: ['approved', 'rejected', 'cancelled', 'completed', 'expired'] }
   })
   .populate('requester_shift_id target_shift_id requester_id target_user_id home_id')
   .sort({ updated_at: -1 })

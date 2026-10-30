@@ -1,15 +1,27 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const ShiftSwap = require('../models/ShiftSwap');
 const Shift = require('../models/Shift');
 const { requireRole, authenticateToken } = require('../middleware/auth');
 const shiftSwapService = require('../services/shiftSwapService');
 
+// 409 body asking the caller to resend with `rest_consent: true` after showing the warnings.
+function restConsentRequired(restWarnings) {
+  return {
+    error: 'Rest consent required',
+    consent_required: true,
+    rest_warnings: restWarnings,
+    message: 'This swap breaks the minimum rest rule. It can go ahead only if you consent; it will be flagged for admin review.'
+  };
+}
+
 // Get all shift swaps for a user (both as requester and target)
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, type } = req.query;
     const userId = req.user._id.toString();
+    await ShiftSwap.expireStale();
     
     let filter = {
       $or: [
@@ -18,8 +30,10 @@ router.get('/', authenticateToken, async (req, res) => {
       ]
     };
 
+    // One status, or a comma-separated list (e.g. the history tab).
     if (status) {
-      filter.status = status;
+      const statuses = String(status).split(',').map((s) => s.trim()).filter(Boolean);
+      filter.status = statuses.length > 1 ? { $in: statuses } : statuses[0];
     }
 
     const swaps = await ShiftSwap.find(filter)
@@ -49,6 +63,7 @@ router.get('/', authenticateToken, async (req, res) => {
 router.get('/pending', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id.toString();
+    await ShiftSwap.expireStale();
     
     const pendingSwaps = await ShiftSwap.findPendingSwapsForUser(userId)
       .populate('requester_shift_id', 'date start_time end_time shift_type home_id service_id')
@@ -94,8 +109,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
 // Create a new shift swap request
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    const { requester_shift_id, target_shift_id, requester_message } = req.body;
+    const { requester_shift_id, target_shift_id, target_user_id, requester_message, rest_consent } = req.body;
     const requesterId = req.user._id.toString();
+    await ShiftSwap.expireStale();
 
     // Validate required fields
     if (!requester_shift_id || !target_shift_id) {
@@ -128,10 +144,22 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    // Find the target user (user assigned to the target shift)
-    const targetUserAssignment = targetShift.assigned_staff.find(
-      assignment => assignment.user_id._id.toString() !== requesterId
+    // The colleague to swap with: the one chosen (must be on the target shift), or, when not
+    // given, the target shift's only other assignee.
+    const otherAssignments = targetShift.assigned_staff.filter(
+      assignment => assignment.user_id && assignment.user_id._id.toString() !== requesterId
     );
+    let targetUserAssignment;
+    if (target_user_id) {
+      targetUserAssignment = otherAssignments.find(a => a.user_id._id.toString() === String(target_user_id));
+      if (!targetUserAssignment) {
+        return res.status(400).json({ error: 'The selected colleague is not assigned to the target shift' });
+      }
+    } else if (otherAssignments.length === 1) {
+      targetUserAssignment = otherAssignments[0];
+    } else if (otherAssignments.length > 1) {
+      return res.status(400).json({ error: 'Choose which colleague on the target shift to swap with' });
+    }
 
     if (!targetUserAssignment) {
       return res.status(400).json({ 
@@ -164,6 +192,11 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
+    const restWarnings = conflictCheck.restWarnings.map((w) => w.message);
+    if (restWarnings.length && rest_consent !== true) {
+      return res.status(409).json(restConsentRequired(restWarnings));
+    }
+
     // Create the swap request
     const swapData = {
       requester_shift_id,
@@ -172,6 +205,9 @@ router.post('/', authenticateToken, async (req, res) => {
       target_user_id: targetUserId,
       requester_message: requester_message || '',
       home_id: requesterShift.home_id, // Use requester's shift home as primary
+      expires_at: shiftSwapService.expiryFor(requesterShift, targetShift),
+      rest_warnings: restWarnings,
+      requester_rest_consent_at: restWarnings.length ? new Date() : null,
       conflict_check: {
         has_conflict: false,
         conflict_details: []
@@ -207,43 +243,38 @@ router.post('/', authenticateToken, async (req, res) => {
 // Approve a shift swap request
 router.post('/:id/approve', authenticateToken, async (req, res) => {
   try {
-    const { response_message } = req.body;
+    const { response_message, rest_consent } = req.body;
     const userId = req.user._id.toString();
+    await ShiftSwap.expireStale();
 
-    const swap = await ShiftSwap.findById(req.params.id)
-      .populate('requester_shift_id target_shift_id requester_id target_user_id');
+    const swap = await ShiftSwap.findById(req.params.id);
 
     if (!swap) {
       return res.status(404).json({ error: 'Shift swap not found' });
     }
 
     // Check if user is the target user (the one who needs to approve)
-    if (swap.target_user_id._id.toString() !== userId) {
+    if (swap.target_user_id.toString() !== userId) {
       return res.status(403).json({ 
         error: 'Only the target user can approve this swap request' 
       });
     }
 
-    // Check if swap is still pending
+    if (swap.status === 'expired') {
+      return res.status(400).json({ error: 'This swap request has expired' });
+    }
     if (swap.status !== 'pending') {
       return res.status(400).json({ 
         error: 'This swap request is no longer pending' 
       });
     }
 
-    // Check if swap has expired
-    if (swap.isExpired) {
-      return res.status(400).json({ 
-        error: 'This swap request has expired' 
-      });
-    }
-
     // Re-check for conflicts before approval (in case something changed)
     const conflictCheck = await shiftSwapService.checkSwapConflicts(
-      swap.requester_shift_id._id.toString(),
-      swap.target_shift_id._id.toString(),
-      swap.requester_id._id.toString(),
-      swap.target_user_id._id.toString(),
+      swap.requester_shift_id.toString(),
+      swap.target_shift_id.toString(),
+      swap.requester_id.toString(),
+      swap.target_user_id.toString(),
       swap._id.toString() // Exclude the current swap from conflict check
     );
 
@@ -255,26 +286,69 @@ router.post('/:id/approve', authenticateToken, async (req, res) => {
       });
     }
 
-    // Approve the swap
-    swap.approve(response_message);
-    await swap.save();
+    // A rest-rule breach needs both staff's consent. Re-checked now, so the requester must also
+    // have consented if the breach only arose after they sent the request.
+    const restWarnings = conflictCheck.restWarnings;
+    if (restWarnings.length) {
+      if (!swap.requester_rest_consent_at) {
+        return res.status(409).json({
+          error: 'The requester has not consented to the rest exception',
+          message: 'This swap now breaks the minimum rest rule, which the requester did not consent to. Ask them to send a new request.',
+          rest_warnings: restWarnings.map((w) => w.message)
+        });
+      }
+      if (rest_consent !== true) {
+        return res.status(409).json(restConsentRequired(restWarnings.map((w) => w.message)));
+      }
+    }
 
-    // Execute the swap immediately after approval
+    // Claim the request atomically so a double-submit can't execute it twice.
+    const claimed = await ShiftSwap.findOneAndUpdate(
+      { _id: swap._id, status: 'pending', expires_at: { $gt: new Date() } },
+      {
+        $set: {
+          status: 'approved',
+          response_message: response_message || '',
+          responded_at: new Date(),
+          rest_warnings: restWarnings.map((w) => w.message),
+          target_rest_consent_at: restWarnings.length ? new Date() : null
+        }
+      },
+      { new: true }
+    );
+    if (!claimed) {
+      return res.status(400).json({ error: 'This swap request is no longer pending' });
+    }
+
     try {
-      const executionResult = await shiftSwapService.executeSwap(swap._id);
-      
+      // Whoever ends up short of rest is flagged for admin review.
+      const executionResult = await shiftSwapService.executeSwap(claimed._id, {
+        requester: restWarnings.some((w) => w.user === 'requester'),
+        target_user: restWarnings.some((w) => w.user === 'target_user')
+      });
+      const completed = await ShiftSwap.findById(claimed._id);
       res.json({
-        ...swap.toObject(),
+        ...completed.toObject(),
         executionResult,
         message: 'Shift swap approved and executed successfully'
       });
     } catch (executionError) {
+      // Nothing on the rota changed; put the request back to pending so it can be retried
+      // or rejected.
+      await ShiftSwap.updateOne(
+        { _id: claimed._id, status: 'approved' },
+        { $set: { status: 'pending', target_rest_consent_at: null }, $unset: { responded_at: 1 } }
+      );
+      if (executionError instanceof shiftSwapService.SwapExecutionError) {
+        return res.status(409).json({
+          error: executionError.message,
+          message: 'The swap could not be completed because the rota has changed. Nothing was changed.'
+        });
+      }
       console.error('Error executing approved swap:', executionError);
-      // The swap is still approved, but execution failed
       res.status(500).json({
-        ...swap.toObject(),
-        error: 'Swap approved but execution failed',
-        message: 'The swap was approved but could not be executed. Please contact support.'
+        error: 'Swap could not be executed',
+        message: 'The swap could not be completed. Nothing was changed; please try again.'
       });
     }
 
@@ -289,6 +363,7 @@ router.post('/:id/reject', authenticateToken, async (req, res) => {
   try {
     const { response_message } = req.body;
     const userId = req.user._id.toString();
+    await ShiftSwap.expireStale();
 
     const swap = await ShiftSwap.findById(req.params.id);
 
@@ -325,6 +400,7 @@ router.post('/:id/reject', authenticateToken, async (req, res) => {
 router.post('/:id/cancel', authenticateToken, async (req, res) => {
   try {
     const userId = req.user._id.toString();
+    await ShiftSwap.expireStale();
 
     const swap = await ShiftSwap.findById(req.params.id);
 
@@ -369,47 +445,8 @@ router.get('/available-shifts/:userId', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Get user's current shifts in the date range
-    const userShifts = await Shift.find({
-      'assigned_staff.user_id': userId,
-      is_active: true,
-      ...(start_date && end_date && { date: { $gte: start_date, $lte: end_date } }),
-      ...(home_id && { home_id })
-    }).populate('service_id', 'name').populate('home_id', 'name');
-
-    // For each shift, find other shifts in the same home that could be swapped
-    const availableSwaps = [];
-
-    for (const userShift of userShifts) {
-      // Find other shifts in the same home on the same date
-      const otherShifts = await Shift.find({
-        home_id: userShift.home_id,
-        date: userShift.date,
-        'assigned_staff.user_id': { $ne: userId },
-        is_active: true,
-        _id: { $ne: userShift._id }
-      }).populate('assigned_staff.user_id', 'name email').populate('service_id', 'name');
-
-      for (const otherShift of otherShifts) {
-        // Check if there are other users assigned to this shift
-        const otherUsers = otherShift.assigned_staff.filter(
-          assignment => assignment.user_id._id.toString() !== userId
-        );
-
-        if (otherUsers.length > 0) {
-          availableSwaps.push({
-            user_shift: userShift,
-            target_shift: otherShift,
-            potential_swappers: otherUsers.map(u => ({
-              user_id: u.user_id._id,
-              name: u.user_id.name,
-              email: u.user_id.email
-            }))
-          });
-        }
-      }
-    }
-
+    await ShiftSwap.expireStale();
+    const availableSwaps = await shiftSwapService.findSwapOptions(userId, { start_date, end_date, home_id });
     res.json(availableSwaps);
   } catch (error) {
     console.error('Error fetching available shifts for swap:', error);
@@ -428,12 +465,18 @@ router.get('/stats/:userId', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ error: 'Invalid user id' });
+    }
+    await ShiftSwap.expireStale();
+    // aggregate() doesn't cast, so match on ObjectIds.
+    const userObjectId = new mongoose.Types.ObjectId(userId);
     const stats = await ShiftSwap.aggregate([
       {
         $match: {
           $or: [
-            { requester_id: userId },
-            { target_user_id: userId }
+            { requester_id: userObjectId },
+            { target_user_id: userObjectId }
           ]
         }
       },
@@ -451,7 +494,8 @@ router.get('/stats/:userId', authenticateToken, async (req, res) => {
       approved: 0,
       rejected: 0,
       cancelled: 0,
-      completed: 0
+      completed: 0,
+      expired: 0
     };
 
     stats.forEach(stat => {

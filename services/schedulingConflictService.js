@@ -118,12 +118,18 @@ class SchedulingConflictService {
    * @param {string} [options.shiftType] - shift_type of the shift being assigned (for paid-hours / sleep-in rules)
    * @param {string} [options.shiftId] - id of the shift being assigned (excluded from the user's existing shifts)
    * @param {string} [options.homeId] - home of the shift being assigned (its break policy applies to weekly hours)
+   * @param {string[]} [options.excludeShiftIds] - further shifts to treat as not the user's (e.g. the
+   *   shift they give up in a swap)
    * @param {boolean} [options.override] - When true, suppress overridable conflicts (only overlap can still block)
    * @returns {Promise<Object>} Conflict information
    */
   static async checkShiftAssignmentConflict(userId, shiftDate, shiftStartTime, shiftEndTime, options = {}) {
     const shiftType = options.shiftType;
     const override = !!options.override;
+    // Shifts left out of the user's existing rota: the one being assigned, plus any the caller
+    // says they are giving up.
+    const excludedIds = [options.shiftId, ...(options.excludeShiftIds || [])].filter(Boolean).map(String);
+    const excludeFilter = excludedIds.length ? { _id: { $nin: excludedIds } } : {};
     try {
       // Same-time double-booking is a hard block for everyone and takes precedence over
       // everything else, so it is evaluated first and returned regardless of `override`.
@@ -143,7 +149,7 @@ class SchedulingConflictService {
       const candidateWindow = shiftWindow(candidate);
       const overlappingShifts = candidateWindow
         ? (await findOverlappingAssignedShifts(userId, shiftDate, candidateWindow, {
-            excludeShiftId: options.shiftId,
+            excludeShiftIds: excludedIds,
           })).filter((s) => isOneToOne(s) === candidateIsOneToOne)
         : [];
 
@@ -180,7 +186,7 @@ class SchedulingConflictService {
       const dailyShifts = await Shift.find({
         date: shiftDate,
         'assigned_staff.user_id': userId,
-        ...(options.shiftId ? { _id: { $ne: options.shiftId } } : {})
+        ...excludeFilter
       });
       const dayWithCandidate = [...dailyShifts, candidate];
       const durationOf = (s) => this._shiftDurationHours(s.start_time, s.end_time);
@@ -203,7 +209,8 @@ class SchedulingConflictService {
       // Fewer than minRestHours between this shift and an adjacent-day shift.
       const nearbyShifts = await Shift.find({
         date: { $in: this._restWindowDates(shiftDate) },
-        'assigned_staff.user_id': userId
+        'assigned_staff.user_id': userId,
+        ...excludeFilter
       }).select('date start_time end_time');
       let minRest = Infinity;
       for (const s of nearbyShifts) {
@@ -234,7 +241,7 @@ class SchedulingConflictService {
         const weekShifts = await Shift.find({
           date: { $gte: week.start, $lte: week.end },
           'assigned_staff.user_id': userId,
-          ...(options.shiftId ? { _id: { $ne: options.shiftId } } : {})
+          ...excludeFilter
         }).select('start_time end_time date shift_type home_id');
 
         const weekWithCandidate = [...weekShifts, candidate];
