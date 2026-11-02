@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes-only';
 process.env.JWT_EXPIRES_IN = '7d';
 
 const request = require('supertest');
+const KeyWorkerAccessSettings = require('../../../models/KeyWorkerAccessSettings');
 const moment = require('moment-timezone');
 const app = require('../../../server');
 const Shift = require('../../../models/Shift');
@@ -93,22 +94,38 @@ describe('1-to-1 shifts', () => {
       expect(res.body.required_staff_count).toBe(1);
     });
 
-    test.each([['key_worker'], ['senior_staff']])('%s cannot create a 1-to-1', async (role) => {
-      const user = role === 'key_worker' ? keyWorker : senior;
+    test('senior staff cannot create a 1-to-1', async () => {
       await request(app)
         .post('/api/shifts')
-        .set('Authorization', getAuthHeader(user._id))
+        .set('Authorization', getAuthHeader(senior._id))
         .send(oneToOneBody())
         .expect(403);
     });
 
-    test('non-admins cannot edit or delete a 1-to-1', async () => {
-      const shift = await oneToOne();
+    test('key workers with full rota access can create and edit a 1-to-1', async () => {
+      const res = await request(app)
+        .post('/api/shifts')
+        .set('Authorization', getAuthHeader(keyWorker._id))
+        .send(oneToOneBody())
+        .expect(201);
       await request(app)
-        .put(`/api/shifts/${shift._id}`)
+        .put(`/api/shifts/${res.body._id}`)
         .set('Authorization', getAuthHeader(keyWorker._id))
         .send({ notes: 'x' })
+        .expect(200);
+    });
+
+    test('key workers without full rota access cannot create a 1-to-1', async () => {
+      await KeyWorkerAccessSettings.create({ rota: 'view' });
+      await request(app)
+        .post('/api/shifts')
+        .set('Authorization', getAuthHeader(keyWorker._id))
+        .send(oneToOneBody())
         .expect(403);
+    });
+
+    test('senior staff cannot delete a 1-to-1', async () => {
+      const shift = await oneToOne();
       await request(app)
         .delete(`/api/shifts/${shift._id}`)
         .set('Authorization', getAuthHeader(senior._id))
@@ -184,10 +201,16 @@ describe('1-to-1 shifts', () => {
   });
 
   describe('assignment', () => {
-    test('only admins assign 1-to-1s', async () => {
+    test('admins and key workers with full rota access assign 1-to-1s, others cannot', async () => {
+      const shift = await oneToOne();
+      await assign(shift, worker, worker).expect(403);
+      await assign(shift, worker, keyWorker).expect(200);
+    });
+
+    test('key workers without full rota access cannot assign 1-to-1s', async () => {
+      await KeyWorkerAccessSettings.create({ rota: 'view' });
       const shift = await oneToOne();
       await assign(shift, worker, keyWorker).expect(403);
-      await assign(shift, worker, worker).expect(403);
     });
 
     test("a 1-to-1 over the staff member's own background shift is allowed and covered", async () => {

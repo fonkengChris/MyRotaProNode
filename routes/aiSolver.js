@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const AISolver = require('../services/aiSolver');
 const SolverSettings = require('../models/SolverSettings');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireAccess, keyWorkerOutOfScope } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -12,6 +12,7 @@ const router = express.Router();
 router.post('/generate-rota', [
   authenticateToken,
   requireRole(['admin', 'key_worker']),
+  requireAccess('rota'),
   body('week_start_date').isISO8601().withMessage('Valid week start date is required'),
   body('week_end_date').isISO8601().withMessage('Valid week end date is required'),
   body('home_ids').custom((value) => {
@@ -33,6 +34,11 @@ router.post('/generate-rota', [
         error: 'Validation failed', 
         details: errors.array() 
       });
+    }
+
+    const requestedHomes = Array.isArray(req.body.home_ids) ? req.body.home_ids : [req.body.home_ids];
+    if (requestedHomes.some(homeId => keyWorkerOutOfScope(req.user, 'rota', homeId))) {
+      return res.status(403).json({ error: 'Access denied. You can only generate rotas for your own home.' });
     }
 
     const { 
@@ -209,6 +215,7 @@ router.post('/generate-rota', [
 router.post('/optimize-rota', [
   authenticateToken,
   requireRole(['admin', 'key_worker']),
+  requireAccess('rota'),
   body('rota_id').isMongoId().withMessage('Valid rota ID is required'),
   body('optimization_type').isIn(['staff_distribution', 'shift_timing', 'workload_balance']).withMessage('Valid optimization type is required')
 ], async (req, res) => {
@@ -252,6 +259,7 @@ router.post('/optimize-rota', [
 router.post('/validate-rota', [
   authenticateToken,
   requireRole(['admin', 'key_worker']),
+  requireAccess('rota'),
   body('rota_data').isObject().withMessage('Rota data is required')
 ], async (req, res) => {
   try {
@@ -312,7 +320,7 @@ const LOCKED_RULES = [
   { key: 'respect_time_off', name: 'Respect approved time off', description: 'Staff on approved leave are never auto-assigned.' },
   { key: 'respect_unavailability', name: 'Respect unavailability', description: 'Staff who marked a day as unavailable are never auto-assigned that day.' },
   { key: 'home_access', name: 'Home access', description: 'Staff are only assigned to homes they are linked to.' },
-  { key: 'one_to_one_manual', name: '1-to-1 shifts are manual', description: '1-to-1 shifts are created and assigned by admins only.' }
+  { key: 'one_to_one_manual', name: '1-to-1 shifts are manual', description: 'The solver never creates or assigns 1-to-1 shifts; they are managed by hand on the rota.' }
 ];
 
 // Copy only the keys that exist in `shape` (DEFAULTS), so unknown or system fields

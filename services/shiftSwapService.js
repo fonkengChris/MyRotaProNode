@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
+const KeyWorkerAccessSettings = require('../models/KeyWorkerAccessSettings');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const ShiftSwap = require('../models/ShiftSwap');
 const Home = require('../models/Home');
@@ -267,6 +268,13 @@ class ShiftSwapService {
    * listed only when checkSwapConflicts finds nothing blocking; any rest-rule breach that would
    * need both staff's consent is returned as `rest_warnings`.
    */
+  // Key workers only take part in swaps when Shift Swaps is on for them.
+  async takesSwaps(user) {
+    if (!user || user.role !== 'key_worker') return true;
+    const access = await KeyWorkerAccessSettings.resolveFor(user.key_worker_access);
+    return access.shift_swaps === 'visible';
+  }
+
   async findSwapOptions(userId, { start_date, end_date, home_id } = {}) {
     const now = new Date();
     const userShifts = await Shift.find({
@@ -291,14 +299,16 @@ class ShiftSwapService {
             is_active: true,
             shift_type: { $ne: 'one_to_one' },
             _id: { $ne: userShift._id },
-          }).populate('assigned_staff.user_id', 'name email').populate('service_id', 'name');
+          }).populate('assigned_staff.user_id', 'name email role +key_worker_access').populate('service_id', 'name');
 
           const options = await Promise.all(
             otherShifts
               .filter((s) => !hasStarted(s, now))
               .filter((s) => Math.abs(paidHoursAfterBreak(s, breakPolicy) - paid) <= PAID_HOURS_TOLERANCE)
               .map(async (otherShift) => {
-                const colleagues = otherShift.assigned_staff.filter((a) => a.user_id && a.user_id._id);
+                const assigned = otherShift.assigned_staff.filter((a) => a.user_id && a.user_id._id);
+                const taking = await Promise.all(assigned.map((a) => this.takesSwaps(a.user_id)));
+                const colleagues = assigned.filter((_, i) => taking[i]);
                 const checks = await Promise.all(
                   colleagues.map((a) =>
                     this.checkSwapConflicts(String(userShift._id), String(otherShift._id), String(userId), String(a.user_id._id))

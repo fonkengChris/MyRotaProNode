@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Service = require('../models/Service');
-const { requireRole, getUserHomeIds } = require('../middleware/auth');
+const { requireRole, getUserHomeIds, reachesAllHomesInAnyArea } = require('../middleware/auth');
 
 // Get all services (admins see all; everyone else only services in their home(s))
 router.get('/', async (req, res) => {
@@ -12,12 +12,12 @@ router.get('/', async (req, res) => {
     // Only filter by home_id if it's provided and valid
     if (home_id && home_id !== 'undefined' && home_id !== 'null') {
       // Non-admins may only query a home they belong to.
-      if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(home_id.toString())) {
+      if (req.user.role !== 'admin' && !reachesAllHomesInAnyArea(req.user) && !getUserHomeIds(req.user).includes(home_id.toString())) {
         return res.status(403).json({ error: 'Access denied. You can only view services for your own home.' });
       }
       // Use $in to check if the home_id is in the home_ids array
       filter.home_ids = { $in: [home_id] };
-    } else if (req.user.role !== 'admin') {
+    } else if (req.user.role !== 'admin' && !reachesAllHomesInAnyArea(req.user)) {
       // No explicit home requested: restrict to the user's own home(s).
       filter.home_ids = { $in: getUserHomeIds(req.user) };
     }
@@ -39,7 +39,7 @@ router.get('/:id', async (req, res) => {
     }
 
     // Non-admins can only view a service offered in one of their homes.
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && !reachesAllHomesInAnyArea(req.user)) {
       const myHomeIds = getUserHomeIds(req.user);
       const serviceHomeIds = (service.home_ids || []).map(h => (h && h._id ? h._id : h).toString());
       if (!serviceHomeIds.some(id => myHomeIds.includes(id))) {

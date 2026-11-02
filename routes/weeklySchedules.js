@@ -1,8 +1,33 @@
 const express = require('express');
 const router = express.Router();
 const WeeklySchedule = require('../models/WeeklySchedule');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requireAccess, canReachHome, keyWorkerOutOfScope, reachesAllHomes, getUserHomeIds } = require('../middleware/auth');
 const mongoose = require('mongoose');
+
+const OUT_OF_SCOPE = { error: 'Access denied. You can only manage weekly schedules for your own home.' };
+
+// Blocks key workers from a schedule whose home is outside their scope.
+const checkScheduleHome = async (req, res, next) => {
+  try {
+    if (req.user.role !== 'key_worker') return next();
+    const schedule = await WeeklySchedule.findById(req.params.id).select('home_id');
+    if (schedule && keyWorkerOutOfScope(req.user, 'weekly_schedules', schedule.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
+    next();
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid weekly schedule' });
+  }
+};
+
+// Fields PUT may set: never the home, and never `$` operators.
+const pickScheduleFields = (body) => {
+  const data = {};
+  for (const field of ['schedule', 'is_active']) {
+    if (body[field] !== undefined) data[field] = body[field];
+  }
+  return data;
+};
 
 // Get weekly schedule by home ID
 router.get('/home/:homeId', async (req, res) => {
@@ -14,6 +39,10 @@ router.get('/home/:homeId', async (req, res) => {
     }
     if (!mongoose.Types.ObjectId.isValid(homeId)) {
       return res.status(400).json({ error: 'Invalid homeId' });
+    }
+    // Rotas are built from the weekly schedule, so rota access can read it too.
+    if (req.user.role === 'key_worker' && !canReachHome(req.user, 'weekly_schedules', homeId) && !canReachHome(req.user, 'rota', homeId)) {
+      return res.status(403).json(OUT_OF_SCOPE);
     }
 
     const schedule = await WeeklySchedule.findOne({ 
@@ -38,10 +67,14 @@ router.get('/home/:homeId', async (req, res) => {
   }
 });
 
-// Get all weekly schedules (admin only)
-router.get('/', requireRole(['admin']), async (req, res) => {
+// Get all weekly schedules
+router.get('/', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules', 'view'), async (req, res) => {
   try {
-    const schedules = await WeeklySchedule.find({ is_active: true })
+    const filter = { is_active: true };
+    if (!reachesAllHomes(req.user, 'weekly_schedules')) {
+      filter.home_id = { $in: getUserHomeIds(req.user) };
+    }
+    const schedules = await WeeklySchedule.find(filter)
       .populate('home_id', 'name location.city')
       .populate('schedule.monday.shifts.service_id', 'name category')
       .populate('schedule.tuesday.shifts.service_id', 'name category')
@@ -59,8 +92,11 @@ router.get('/', requireRole(['admin']), async (req, res) => {
 });
 
 // Create new weekly schedule for a home
-router.post('/', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), async (req, res) => {
   try {
+    if (keyWorkerOutOfScope(req.user, 'weekly_schedules', req.body.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
 
     
     // Check if a schedule already exists for this home
@@ -104,13 +140,13 @@ router.post('/', requireRole(['admin', 'key_worker']), async (req, res) => {
 });
 
 // Update existing weekly schedule
-router.put('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), checkScheduleHome, async (req, res) => {
   try {
 
     
     const schedule = await WeeklySchedule.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      pickScheduleFields(req.body),
       { new: true, runValidators: true }
     );
     
@@ -147,7 +183,7 @@ router.put('/:id', requireRole(['admin', 'key_worker']), async (req, res) => {
 });
 
 // Delete weekly schedule
-router.delete('/:id', requireRole(['admin']), async (req, res) => {
+router.delete('/:id', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), checkScheduleHome, async (req, res) => {
   try {
     const schedule = await WeeklySchedule.findByIdAndDelete(req.params.id);
     if (!schedule) {
@@ -162,7 +198,7 @@ router.delete('/:id', requireRole(['admin']), async (req, res) => {
 });
 
 // Add shift to a specific day
-router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), checkScheduleHome, async (req, res) => {
   try {
     const { id, dayName } = req.params;
     const shiftData = req.body;
@@ -206,7 +242,7 @@ router.post('/:id/days/:dayName/shifts', requireRole(['admin', 'key_worker']), a
 });
 
 // Remove shift from a specific day
-router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), checkScheduleHome, async (req, res) => {
   try {
     const { id, dayName, shiftIndex } = req.params;
     
@@ -240,7 +276,7 @@ router.delete('/:id/days/:dayName/shifts/:shiftIndex', requireRole(['admin', 'ke
 });
 
 // Toggle day active/inactive status
-router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.patch('/:id/days/:dayName/toggle', requireRole(['admin', 'key_worker']), requireAccess('weekly_schedules'), checkScheduleHome, async (req, res) => {
   try {
     const { id, dayName } = req.params;
     

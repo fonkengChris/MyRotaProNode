@@ -104,6 +104,15 @@ const canReachHome = (user, area, homeId) => {
   return !!homeId && getUserHomeIds(user).includes(homeId.toString());
 };
 
+// True when a key worker's home scope doesn't cover this home. Other roles are never out of
+// scope here: their route guards decide for them.
+const keyWorkerOutOfScope = (user, area, homeId) =>
+  !!user && user.role === 'key_worker' && !canReachHome(user, area, homeId);
+
+// Whether any management area gives this user every home (home pickers and service lists).
+const reachesAllHomesInAnyArea = (user) =>
+  ['staff', 'weekly_schedules', 'rota'].some(area => reachesAllHomes(user, area));
+
 // Guards a route for key workers by access level. Other roles pass through, so pair this
 // with requireRole, which decides for them.
 const requireAccess = (area, level = 'full') => (req, res, next) => {
@@ -282,6 +291,8 @@ module.exports = {
   hasAccess,
   reachesAllHomes,
   canReachHome,
+  keyWorkerOutOfScope,
+  reachesAllHomesInAnyArea,
   requireAccess,
   isManager
 };

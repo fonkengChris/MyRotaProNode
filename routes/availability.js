@@ -1,11 +1,20 @@
 const express = require('express');
 const router = express.Router();
 const Availability = require('../models/Availability');
+const User = require('../models/User');
+const { hasAccess, reachesAllHomes, canReachHome, getUserHomeIds } = require('../middleware/auth');
 
-// Admins manage anyone's availability; part-time/bank staff manage only their own.
-const canManageAvailabilityFor = (actor, targetUserId) =>
-  actor.role === 'admin' ||
-  (String(targetUserId) === actor._id.toString() && ['parttime', 'bank'].includes(actor.type));
+// Admins manage anyone's availability; key workers with full staff access manage other staff
+// in their scope; part-time/bank staff manage only their own.
+const canManageAvailabilityFor = async (actor, targetUserId) => {
+  if (actor.role === 'admin') return true;
+  const isSelf = String(targetUserId) === actor._id.toString();
+  if (isSelf) return ['parttime', 'bank'].includes(actor.type);
+  if (actor.role !== 'key_worker' || !hasAccess(actor, 'staff')) return false;
+  const target = await User.findById(targetUserId).select('role homes');
+  if (!target || target.role === 'admin') return false;
+  return reachesAllHomes(actor, 'staff') || getUserHomeIds(target).some(id => canReachHome(actor, 'staff', id));
+};
 
 const forbidden = (res, actor) => res.status(403).json({
   error: actor.type === 'fulltime' && actor.role !== 'admin'
@@ -51,7 +60,7 @@ router.get('/:id', async (req, res) => {
 // Create new availability
 router.post('/', async (req, res) => {
   try {
-    if (!canManageAvailabilityFor(req.user, req.body.user_id)) {
+    if (!(await canManageAvailabilityFor(req.user, req.body.user_id))) {
       return forbidden(res, req.user);
     }
 
@@ -103,7 +112,7 @@ router.put('/:id', async (req, res) => {
     if (!existing) {
       return res.status(404).json({ error: 'Availability record not found' });
     }
-    if (!canManageAvailabilityFor(req.user, existing.user_id)) {
+    if (!(await canManageAvailabilityFor(req.user, existing.user_id))) {
       return forbidden(res, req.user);
     }
 
@@ -128,7 +137,7 @@ router.delete('/:id', async (req, res) => {
     if (!availability) {
       return res.status(404).json({ error: 'Availability record not found' });
     }
-    if (!canManageAvailabilityFor(req.user, availability.user_id)) {
+    if (!(await canManageAvailabilityFor(req.user, availability.user_id))) {
       return forbidden(res, req.user);
     }
     await availability.deleteOne();

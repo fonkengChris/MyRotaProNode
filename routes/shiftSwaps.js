@@ -3,7 +3,8 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const ShiftSwap = require('../models/ShiftSwap');
 const Shift = require('../models/Shift');
-const { requireRole, authenticateToken } = require('../middleware/auth');
+const User = require('../models/User');
+const { requireRole, authenticateToken, hasAccess } = require('../middleware/auth');
 const shiftSwapService = require('../services/shiftSwapService');
 const { queueSwapCompleted } = require('../services/shiftChangeNotifications');
 
@@ -114,6 +115,10 @@ router.post('/', authenticateToken, async (req, res) => {
     const requesterId = req.user._id.toString();
     await ShiftSwap.expireStale();
 
+    if (req.user.role === 'key_worker' && !hasAccess(req.user, 'shift_swaps', 'visible')) {
+      return res.status(403).json({ error: 'Shift swaps are not enabled for your account.' });
+    }
+
     // Validate required fields
     if (!requester_shift_id || !target_shift_id) {
       return res.status(400).json({ 
@@ -175,6 +180,11 @@ router.post('/', authenticateToken, async (req, res) => {
       return res.status(400).json({ 
         error: 'Cannot swap with yourself' 
       });
+    }
+
+    const targetUser = await User.findById(targetUserId).select('role +key_worker_access');
+    if (!(await shiftSwapService.takesSwaps(targetUser))) {
+      return res.status(400).json({ error: 'This colleague is not taking shift swaps.' });
     }
 
     // Check for conflicts

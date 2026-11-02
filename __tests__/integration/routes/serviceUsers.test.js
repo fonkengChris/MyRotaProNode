@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes-only';
 process.env.JWT_EXPIRES_IN = '7d';
 
 const request = require('supertest');
+const KeyWorkerAccessSettings = require('../../../models/KeyWorkerAccessSettings');
 const app = require('../../../server');
 const ServiceUser = require('../../../models/ServiceUser');
 const { createTestUser, createTestHome, getAuthHeader } = require('../../../tests/utils/testHelpers');
@@ -136,7 +137,8 @@ describe('Service Users Routes', () => {
       expect(response.body[0].staff.map(s => s._id)).toEqual([staff._id.toString()]);
     });
 
-    test("key worker can view their service user's home and its staff, but not other homes", async () => {
+    test("with own-homes scope, key worker can view their service user's home and its staff, but not other homes", async () => {
+      await KeyWorkerAccessSettings.create({ home_scope: 'own' });
       await createTestUser({ email: email('staff'), homes: [{ home_id: homeA._id, is_default: true }] });
 
       await request(app)
@@ -166,6 +168,7 @@ describe('Service Users Routes', () => {
     });
 
     test('deactivating the service user removes the derived home access', async () => {
+      await KeyWorkerAccessSettings.create({ home_scope: 'own' });
       await ServiceUser.updateMany({ name: 'Alex' }, { is_active: false });
       await request(app)
         .get(`/api/homes/${homeA._id}`)

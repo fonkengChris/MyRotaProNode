@@ -14,7 +14,7 @@ const {
   queueForAssignees,
   queueShiftEdited,
 } = require('../services/shiftChangeNotifications');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requireAccess, hasAccess, canReachHome, keyWorkerOutOfScope, reachesAllHomes, getUserHomeIds } = require('../middleware/auth');
 const {
   shiftStartDate,
   shiftEndDate,
@@ -41,6 +41,22 @@ function resolveClockTarget(req) {
     return { userId: requestedId };
   }
   return { userId: currentUser._id.toString() };
+}
+
+const OUT_OF_SCOPE = { error: 'Access denied. You can only manage shifts for your own home.' };
+
+// Blocks key workers from a shift whose home is outside their scope.
+async function checkShiftHome(req, res, next) {
+  try {
+    if (req.user.role !== 'key_worker') return next();
+    const shift = await Shift.findById(req.params.id).select('home_id');
+    if (shift && keyWorkerOutOfScope(req.user, 'rota', shift.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
+    next();
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid shift' });
+  }
 }
 
 // Get all shifts
@@ -72,6 +88,15 @@ router.get('/', async (req, res) => {
     if (user_id && user_id !== 'undefined' && user_id !== 'null') {
       filter['assigned_staff.user_id'] = user_id;
     }
+
+    // A key worker's own shifts are always theirs to see; anyone else's follow home scope.
+    if (req.user.role === 'key_worker' && String(user_id) !== req.user._id.toString() && !reachesAllHomes(req.user, 'rota')) {
+      if (filter.home_id) {
+        if (!canReachHome(req.user, 'rota', filter.home_id)) return res.status(403).json(OUT_OF_SCOPE);
+      } else {
+        filter.home_id = { $in: getUserHomeIds(req.user) };
+      }
+    }
     
     const shifts = await Shift.find(filter)
       .populate('service_id', 'name')
@@ -83,7 +108,7 @@ router.get('/', async (req, res) => {
 });
 
 // Get available shifts for staff selection
-router.get('/available', async (req, res) => {
+router.get('/available', requireAccess('shift_selection', 'visible'), async (req, res) => {
   try {
     const { user_id, start_date, end_date, home_ids } = req.query;
     
@@ -283,7 +308,7 @@ async function listFlaggedAssignments(field, status, homeId) {
 
 // List rest-exception assignments for admin review. Defaults to pending. Registered before
 // `/:id` so the literal path is matched first.
-router.get('/rest-exceptions', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.get('/rest-exceptions', requireRole(['admin', 'key_worker']), requireAccess('rota', 'view'), async (req, res) => {
   try {
     res.json(await listFlaggedAssignments('rest_exception_status', req.query.status || 'pending', req.query.home_id));
   } catch (error) {
@@ -326,6 +351,10 @@ router.get('/:id', async (req, res) => {
     if (!shift) {
       return res.status(404).json({ error: 'Shift not found' });
     }
+    const isAssigned = (shift.assigned_staff || []).some(a => String(a.user_id) === req.user._id.toString());
+    if (!isAssigned && keyWorkerOutOfScope(req.user, 'rota', shift.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
     res.json(shift);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch shift' });
@@ -366,8 +395,8 @@ function pickShiftFields(body) {
 async function checkOneToOneRules(req, merged, existing) {
   const touchesOneToOne = isOneToOne(merged.shift_type) || (existing && isOneToOne(existing));
   if (!touchesOneToOne) return null;
-  if (req.user.role !== 'admin') {
-    return { status: 403, error: 'Only admins can create or edit 1-to-1 shifts' };
+  if (!hasAccess(req.user, 'rota')) {
+    return { status: 403, error: 'You do not have access to create or edit 1-to-1 shifts' };
   }
   if (!isOneToOne(merged.shift_type)) return null;
   if (!merged.service_user_id) {
@@ -395,9 +424,12 @@ function sendShiftSaveError(res, error, fallback) {
 }
 
 // Create new shift
-router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota'), async (req, res) => {
   try {
     const data = pickShiftFields(req.body);
+    if (keyWorkerOutOfScope(req.user, 'rota', data.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
     if (isOneToOne(data.shift_type) && data.required_staff_count === undefined) {
       data.required_staff_count = 1;
     }
@@ -431,7 +463,7 @@ router.post('/', requireRole(['admin', 'key_worker', 'senior_staff']), async (re
 });
 
 // Update shift
-router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota'), checkShiftHome, async (req, res) => {
   try {
     const shift = await Shift.findById(req.params.id);
     if (!shift) {
@@ -439,6 +471,9 @@ router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (
     }
 
     const data = pickShiftFields(req.body);
+    if (data.home_id && keyWorkerOutOfScope(req.user, 'rota', data.home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
     const merged = { ...shift.toObject(), ...data };
 
     const ruleError = await checkOneToOneRules(req, merged, shift);
@@ -461,14 +496,14 @@ router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (
 });
 
 // Delete shift
-router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota'), checkShiftHome, async (req, res) => {
   try {
     const existing = await Shift.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Shift not found' });
     }
-    if (isOneToOne(existing) && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only admins can delete 1-to-1 shifts' });
+    if (isOneToOne(existing) && !hasAccess(req.user, 'rota')) {
+      return res.status(403).json({ error: 'You do not have access to delete 1-to-1 shifts' });
     }
     await Shift.findByIdAndDelete(req.params.id);
     queueForAssignees(req.user._id, [existing], 'cancelled');
@@ -655,12 +690,21 @@ router.post('/:id/assign', async (req, res) => {
       return res.status(404).json({ error: 'Shift not found' });
     }
 
-    // 1-to-1 shifts are assigned by admins only (no self-selection).
-    if (isOneToOne(shift) && currentUser.role !== 'admin') {
-      return res.status(403).json({
-        error: 'Only admins can assign staff to 1-to-1 shifts',
-        message: 'Only admins can assign staff to 1-to-1 shifts'
-      });
+    // Key workers assign through the rota (full access, within scope), or select shifts for
+    // themselves if Shift Selection is on for them.
+    if (currentUser.role === 'key_worker') {
+      const viaRota = hasAccess(currentUser, 'rota') && canReachHome(currentUser, 'rota', shift.home_id);
+      const viaSelection = isSelfAssign && hasAccess(currentUser, 'shift_selection', 'visible');
+      if (!viaRota && !viaSelection) {
+        const denied = 'Your access level does not allow assigning staff to this shift';
+        return res.status(403).json({ error: denied, message: denied });
+      }
+    }
+
+    // 1-to-1 shifts are assigned through the rota only (no self-selection).
+    if (isOneToOne(shift) && !hasAccess(currentUser, 'rota')) {
+      const denied = 'You do not have access to assign staff to 1-to-1 shifts';
+      return res.status(403).json({ error: denied, message: denied });
     }
 
     const decision = await evaluateAssignment({ shift, userId: String(user_id), currentUser, override, capPolicy });
@@ -739,8 +783,8 @@ async function removeFlagged(req, res) {
   if (!shift) {
     return res.status(404).json({ error: 'Shift not found' });
   }
-  if (isOneToOne(shift) && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
+  if (isOneToOne(shift) && !hasAccess(req.user, 'rota')) {
+    return res.status(403).json({ error: 'You do not have access to unassign staff from 1-to-1 shifts' });
   }
   try {
     shift.removeStaff(req.params.userId);
@@ -756,7 +800,7 @@ async function removeFlagged(req, res) {
 }
 
 // Confirm a pending rest-exception: the admin accepts the reduced rest gap and clears the flag.
-router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_worker']), requireAccess('rota'), checkShiftHome, async (req, res) => {
   try {
     await confirmFlagged('rest_exception_status', req, res);
   } catch (error) {
@@ -766,7 +810,7 @@ router.post('/:id/rest-exception/:userId/confirm', requireRole(['admin', 'key_wo
 });
 
 // Remove a rest-exception assignment: the admin rejects it and un-assigns the staff member.
-router.post('/:id/rest-exception/:userId/remove', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/rest-exception/:userId/remove', requireRole(['admin', 'key_worker']), requireAccess('rota'), checkShiftHome, async (req, res) => {
   try {
     await removeFlagged(req, res);
   } catch (error) {
@@ -931,7 +975,7 @@ router.post('/:id/clock-out', async (req, res) => {
 });
 
 // Remove staff from shift
-router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota'), checkShiftHome, async (req, res) => {
   try {
     const shift = await Shift.findById(req.params.id);
     
@@ -939,8 +983,8 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior
       return res.status(404).json({ error: 'Shift not found' });
     }
     
-    if (isOneToOne(shift) && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Only admins can unassign staff from 1-to-1 shifts' });
+    if (isOneToOne(shift) && !hasAccess(req.user, 'rota')) {
+      return res.status(403).json({ error: 'You do not have access to unassign staff from 1-to-1 shifts' });
     }
 
     shift.removeStaff(req.params.userId);
@@ -954,7 +998,7 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior
 });
 
 // Check for scheduling conflicts
-router.get('/conflicts/check', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
+router.get('/conflicts/check', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota', 'view'), async (req, res) => {
   try {
     const { home_id, start_date, end_date } = req.query;
     
@@ -970,6 +1014,9 @@ router.get('/conflicts/check', requireRole(['admin', 'key_worker', 'senior_staff
       return res.status(400).json({ 
         error: 'Missing required parameters: home_id, start_date, end_date' 
       });
+    }
+    if (keyWorkerOutOfScope(req.user, 'rota', home_id)) {
+      return res.status(403).json(OUT_OF_SCOPE);
     }
 
     const SchedulingConflictService = require('../services/schedulingConflictService');

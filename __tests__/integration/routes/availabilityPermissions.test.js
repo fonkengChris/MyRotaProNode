@@ -6,6 +6,7 @@ process.env.JWT_EXPIRES_IN = '7d';
 const request = require('supertest');
 const app = require('../../../server');
 const Availability = require('../../../models/Availability');
+const KeyWorkerAccessSettings = require('../../../models/KeyWorkerAccessSettings');
 const { createTestUser, createTestHome, getAuthHeader } = require('../../../tests/utils/testHelpers');
 
 let seq = 0;
@@ -48,8 +49,21 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     expect((await declare(parttime, bank)).status).toBe(403);
   });
 
-  it('stops key workers declaring availability for staff', async () => {
+  it('lets key workers with full staff access declare availability for staff', async () => {
+    expect((await declare(keyWorker, parttime)).status).toBe(201);
+  });
+
+  it('stops key workers without full staff access declaring availability for staff', async () => {
+    await KeyWorkerAccessSettings.create({ staff: 'view' });
     expect((await declare(keyWorker, parttime)).status).toBe(403);
+  });
+
+  it('stops full-time key workers declaring their own availability', async () => {
+    expect((await declare(keyWorker, keyWorker)).status).toBe(403);
+  });
+
+  it('stops key workers declaring availability for admins', async () => {
+    expect((await declare(keyWorker, admin)).status).toBe(403);
   });
 
   it('lets an admin declare, update and delete availability for any staff member', async () => {

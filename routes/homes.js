@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const Home = require('../models/Home');
-const { authenticateToken, requireRole, getUserHomeIds } = require('../middleware/auth');
+const { authenticateToken, requireRole, getUserHomeIds, reachesAllHomesInAnyArea } = require('../middleware/auth');
 
 // Get all homes (admins see all; everyone else only their own home(s))
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const filter = {};
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'admin' && !reachesAllHomesInAnyArea(req.user)) {
       filter._id = { $in: getUserHomeIds(req.user) };
     }
     const homes = await Home.find(filter).populate('manager_id', 'name email');
@@ -20,8 +20,8 @@ router.get('/', authenticateToken, async (req, res) => {
 // Get home by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
-    // Non-admins can only view a home they belong to.
-    if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(req.params.id)) {
+    // Non-admins can only view a home they belong to, unless their access covers every home.
+    if (req.user.role !== 'admin' && !reachesAllHomesInAnyArea(req.user) && !getUserHomeIds(req.user).includes(req.params.id)) {
       return res.status(403).json({ error: 'Access denied. You can only view your own home.' });
     }
     const home = await Home.findById(req.params.id).populate('manager_id', 'name email');
