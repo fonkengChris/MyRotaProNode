@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const KeyWorkerAccessSettings = require('./KeyWorkerAccessSettings');
 const bcrypt = require('bcryptjs');
 const { defaultRateForRole, MAX_HOURLY_RATE_GBP } = require('../utils/payRates');
 
@@ -24,6 +25,11 @@ function roleQueryValue(role) {
   const canonical = normalizeRole(role);
   const legacy = CANONICAL_TO_LEGACY[canonical];
   return legacy && legacy.length ? { $in: [canonical, ...legacy] } : canonical;
+}
+
+const keyWorkerAccessOverrideFields = {};
+for (const [field, values] of Object.entries(KeyWorkerAccessSettings.FIELD_VALUES)) {
+  keyWorkerAccessOverrideFields[field] = { type: String, enum: values };
 }
 
 const userSchema = new mongoose.Schema({
@@ -70,6 +76,12 @@ const userSchema = new mongoose.Schema({
     default: function() { return defaultRateForRole(this.role); },
     min: [0, 'Hourly rate cannot be negative'],
     max: [MAX_HOURLY_RATE_GBP, `Hourly rate cannot exceed ${MAX_HOURLY_RATE_GBP}`],
+    select: false
+  },
+  // Per-person overrides of KeyWorkerAccessSettings; a missing field uses the org setting.
+  // Admin-only, set through PUT /users/:id/key-worker-access.
+  key_worker_access: {
+    type: new mongoose.Schema(keyWorkerAccessOverrideFields, { _id: false }),
     select: false
   },
   type: {

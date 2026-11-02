@@ -3,10 +3,53 @@ const router = express.Router();
 const User = require('../models/User');
 const Shift = require('../models/Shift');
 const mongoose = require('mongoose');
-const { requireRole, requireHomeAccess, getUserHomeIds } = require('../middleware/auth');
+const KeyWorkerAccessSettings = require('../models/KeyWorkerAccessSettings');
+const { requireRole, requireAccess, hasAccess, reachesAllHomes, canReachHome, getUserHomeIds } = require('../middleware/auth');
 
-// Hourly pay is private: only admins see or set it (it is `select: false` on the model).
-const payFields = (req) => (req.user.role === 'admin' ? '+hourly_rate' : '');
+// Hourly pay and key worker access overrides are private: only admins see them
+// (both are `select: false` on the model).
+const privateFields = (req) => (req.user.role === 'admin' ? '+hourly_rate +key_worker_access' : '');
+
+// Fields each kind of edit may set. Allowlists, so `$` operators and system fields in a
+// request body never reach the database. Home changes by key workers go through the
+// add-home/remove-home endpoints, which check scope.
+const PROFILE_FIELDS = ['name', 'email', 'phone', 'skills', 'preferred_shift_types'];
+const STAFF_FIELDS = [...PROFILE_FIELDS, 'role', 'type', 'is_active', 'min_hours_per_week', 'max_hours_per_week', 'annual_leave_entitlement_days'];
+const ADMIN_FIELDS = [...STAFF_FIELDS, 'homes', 'default_home_id', 'hourly_rate'];
+
+// The only roles a key worker may give someone; admin and key_worker are granted by admins.
+const KEY_WORKER_GRANTABLE_ROLES = ['senior_staff', 'support_worker'];
+
+const pickFields = (body, fields) => {
+  const data = {};
+  for (const field of fields) {
+    if (body[field] !== undefined) data[field] = body[field];
+  }
+  return data;
+};
+
+// The staff list is also the rota's staff picker, so rota access reaches it too.
+const readsAllStaff = (user) => reachesAllHomes(user, 'staff') || reachesAllHomes(user, 'rota');
+const readsStaffInHome = (user, homeId) => canReachHome(user, 'staff', homeId) || canReachHome(user, 'rota', homeId);
+
+// Why a key worker may not manage this staff member, or null when they may. Admins are off
+// limits, and so is their own record (profile edits go through PUT /:id as self).
+const keyWorkerTargetError = (actor, target) => {
+  if (actor.role !== 'key_worker') return null;
+  if (!hasAccess(actor, 'staff', 'full')) return 'Your access level does not allow this. Please ask an admin.';
+  if (target.role === 'admin') return 'Only admins can manage admin accounts.';
+  if (target._id.toString() === actor._id.toString()) return 'You cannot change this on your own account.';
+  const reachable = reachesAllHomes(actor, 'staff') || getUserHomeIds(target).some(id => canReachHome(actor, 'staff', id));
+  return reachable ? null : 'Access denied. You can only manage staff in your own home.';
+};
+
+// Deleting or deactivating another key worker takes away a role only admins can grant.
+const keyWorkerRemovalError = (actor, target) => {
+  const error = keyWorkerTargetError(actor, target);
+  if (error) return error;
+  if (actor.role === 'key_worker' && target.role === 'key_worker') return 'Only admins can remove key workers.';
+  return null;
+};
 
 // Get all users (admins see everyone; everyone else is scoped to their own home(s))
 router.get('/', async (req, res) => {
@@ -25,26 +68,25 @@ router.get('/', async (req, res) => {
 
     // Non-admins can only ever see staff who share one of their homes.
     if (req.user.role !== 'admin') {
-      const myHomeIds = getUserHomeIds(req.user);
       if (home_id && home_id !== 'undefined' && home_id !== 'null') {
-        if (!myHomeIds.includes(home_id.toString())) {
+        if (!readsStaffInHome(req.user, home_id)) {
           return res.status(403).json({ error: 'Access denied. You can only view staff in your own home.' });
         }
-      } else {
-        filter['homes.home_id'] = { $in: myHomeIds };
+      } else if (!readsAllStaff(req.user)) {
+        filter['homes.home_id'] = { $in: getUserHomeIds(req.user) };
       }
     }
 
-    const users = await User.find(filter).select(payFields(req));
+    const users = await User.find(filter).select(privateFields(req));
     res.json(users);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
-// Create a new user (admin only). Self-registration was removed, so this is the
-// only way to add users to the system.
-router.post('/', requireRole(['admin']), async (req, res) => {
+// Create a new user (admins, and key workers with full staff access). Self-registration was
+// removed, so this is the only way to add users to the system.
+router.post('/', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
     const { name, email, phone, password, role, type, home_id, homes, annual_leave_entitlement_days, hourly_rate } = req.body;
 
@@ -56,6 +98,10 @@ router.post('/', requireRole(['admin']), async (req, res) => {
     }
     if (!['admin', 'key_worker', 'senior_staff', 'support_worker'].includes(role)) {
       return res.status(400).json({ error: 'Invalid role' });
+    }
+    const byKeyWorker = req.user.role === 'key_worker';
+    if (byKeyWorker && !KEY_WORKER_GRANTABLE_ROLES.includes(role)) {
+      return res.status(403).json({ error: 'Only admins can create admins and key workers.' });
     }
 
     // Check if user already exists
@@ -80,7 +126,7 @@ router.post('/', requireRole(['admin']), async (req, res) => {
     }
 
     // Optional individual rate; otherwise the model defaults it to the role's rate.
-    if (hourly_rate !== undefined && hourly_rate !== null && hourly_rate !== '') {
+    if (!byKeyWorker && hourly_rate !== undefined && hourly_rate !== null && hourly_rate !== '') {
       userData.hourly_rate = hourly_rate;
     }
 
@@ -88,6 +134,9 @@ router.post('/', requireRole(['admin']), async (req, res) => {
     // `homes` array from the client.
     const primaryHomeId = home_id
       || (Array.isArray(homes) && homes[0] && (typeof homes[0].home_id === 'string' ? homes[0].home_id : homes[0].home_id?.id));
+    if (byKeyWorker && !reachesAllHomes(req.user, 'staff') && !canReachHome(req.user, 'staff', primaryHomeId)) {
+      return res.status(403).json({ error: 'Access denied. You can only add staff to your own home.' });
+    }
     if (role !== 'admin' && primaryHomeId) {
       userData.homes = [{ home_id: primaryHomeId, is_default: true }];
       userData.default_home_id = primaryHomeId;
@@ -115,16 +164,15 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid user ID provided' });
     }
 
-    const user = await User.findById(req.params.id).select(payFields(req));
+    const user = await User.findById(req.params.id).select(privateFields(req));
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Non-admins may only view themselves or staff who share one of their homes.
     if (req.user.role !== 'admin' && req.params.id !== req.user._id.toString()) {
-      const myHomeIds = getUserHomeIds(req.user);
-      const sharesHome = getUserHomeIds(user).some(id => myHomeIds.includes(id));
-      if (!sharesHome) {
+      const reachable = readsAllStaff(req.user) || getUserHomeIds(user).some(id => readsStaffInHome(req.user, id));
+      if (!reachable) {
         return res.status(403).json({ error: 'Access denied. You can only view your own data or staff in your home.' });
       }
     }
@@ -135,13 +183,13 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Update user (self for own profile, or admin/key_worker for staff in their home)
+// Update user (self for own profile, or admin/key_worker with full staff access)
 router.put('/:id', async (req, res) => {
   try {
     const isSelf = req.params.id === req.user._id.toString();
-    const isManagerRole = ['admin', 'key_worker'].includes(req.user.role);
+    const isAdmin = req.user.role === 'admin';
 
-    if (!isManagerRole && !isSelf) {
+    if (!isAdmin && req.user.role !== 'key_worker' && !isSelf) {
       return res.status(403).json({ error: 'Access denied. You can only update your own profile.' });
     }
 
@@ -150,38 +198,32 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Key workers can only manage staff in their own home(s), and never admins.
-    if (req.user.role === 'key_worker' && !isSelf) {
-      const myHomeIds = getUserHomeIds(req.user);
-      const sharesHome = getUserHomeIds(target).some(id => myHomeIds.includes(id));
-      if (!sharesHome || target.role === 'admin' || req.body.role === 'admin') {
-        return res.status(403).json({ error: 'Access denied. You can only manage staff in your own home.' });
+    let updateData;
+    if (isAdmin) {
+      updateData = pickFields(req.body, ADMIN_FIELDS);
+    } else if (isSelf) {
+      updateData = pickFields(req.body, PROFILE_FIELDS);
+    } else {
+      const targetError = keyWorkerTargetError(req.user, target);
+      if (targetError) {
+        return res.status(403).json({ error: targetError });
       }
-    }
-
-    const { password, ...updateData } = req.body;
-
-    // Regular users may only edit their own profile fields, never privileged ones.
-    if (!isManagerRole) {
-      delete updateData.role;
-      delete updateData.homes;
-      delete updateData.default_home_id;
-      delete updateData.type;
-      delete updateData.is_active;
-      delete updateData.max_hours_per_week;
-      delete updateData.min_hours_per_week;
-      delete updateData.annual_leave_entitlement_days;
-    }
-    // Pay rates are admin-only — key workers can manage staff but not their pay.
-    if (req.user.role !== 'admin') {
-      delete updateData.hourly_rate;
+      updateData = pickFields(req.body, STAFF_FIELDS);
+      // The edit form always sends the role, so an unchanged one isn't a role change.
+      if (updateData.role === target.role) delete updateData.role;
+      if (updateData.role !== undefined && (target.role === 'key_worker' || !KEY_WORKER_GRANTABLE_ROLES.includes(updateData.role))) {
+        return res.status(403).json({ error: 'Only admins can grant or change the admin and key worker roles.' });
+      }
+      if (updateData.is_active === false && target.is_active && target.role === 'key_worker') {
+        return res.status(403).json({ error: 'Only admins can remove key workers.' });
+      }
     }
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true, runValidators: true }
-    ).select(payFields(req));
+    ).select(privateFields(req));
 
     res.json(user);
   } catch (error) {
@@ -192,10 +234,47 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete user (admin only)
-router.delete('/:id', requireRole(['admin']), async (req, res) => {
+// Set a key worker's access overrides (admin only). Empty values use the org setting.
+router.put('/:id/key-worker-access', requireRole(['admin']), async (req, res) => {
+  try {
+    const target = await User.findById(req.params.id);
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (target.role !== 'key_worker') {
+      return res.status(400).json({ error: 'Access overrides only apply to key workers' });
+    }
+
+    const overrides = {};
+    for (const [field, values] of Object.entries(KeyWorkerAccessSettings.FIELD_VALUES)) {
+      const value = req.body[field];
+      if (value === undefined || value === null || value === '') continue;
+      if (!values.includes(value)) {
+        return res.status(400).json({ error: `Invalid value for ${field}` });
+      }
+      overrides[field] = value;
+    }
+
+    target.key_worker_access = overrides;
+    await target.save();
+    res.json({ key_worker_access: overrides });
+  } catch (error) {
+    console.error('Update key worker access overrides error:', error);
+    res.status(500).json({ error: 'Failed to update key worker access' });
+  }
+});
+
+// Delete user (admins, and key workers with full staff access)
+router.delete('/:id', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
     const userId = req.params.id
+    if (mongoose.Types.ObjectId.isValid(userId)) {
+      const target = await User.findById(userId).select('role homes');
+      const removalError = target && keyWorkerRemovalError(req.user, target);
+      if (removalError) {
+        return res.status(403).json({ error: removalError });
+      }
+    }
     const userIdObj = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId
 
     // Cascade cleanup: remove deleted user from any shift assignments.
@@ -217,17 +296,22 @@ router.delete('/:id', requireRole(['admin']), async (req, res) => {
 });
 
 // Deactivate user
-router.post('/:id/deactivate', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/deactivate', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
+    const target = await User.findById(req.params.id).select('role homes');
+    if (!target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const removalError = keyWorkerRemovalError(req.user, target);
+    if (removalError) {
+      return res.status(403).json({ error: removalError });
+    }
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { is_active: false },
       { new: true }
     );
-    
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
     
     res.json(user);
   } catch (error) {
@@ -236,7 +320,7 @@ router.post('/:id/deactivate', requireRole(['admin', 'key_worker']), async (req,
 });
 
 // Add home to user
-router.post('/:id/add-home', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/add-home', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
     const { home_id, is_default = false } = req.body;
     
@@ -256,6 +340,14 @@ router.post('/:id/add-home', requireRole(['admin', 'key_worker']), async (req, r
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    const targetError = keyWorkerTargetError(req.user, user);
+    if (targetError) {
+      return res.status(403).json({ error: targetError });
+    }
+    if (req.user.role === 'key_worker' && !canReachHome(req.user, 'staff', home_id)) {
+      return res.status(403).json({ error: 'Access denied. You can only allocate staff to your own home.' });
+    }
     
     user.addHome(home_id, is_default);
     await user.save();
@@ -267,11 +359,19 @@ router.post('/:id/add-home', requireRole(['admin', 'key_worker']), async (req, r
 });
 
 // Remove home from user
-router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    const targetError = keyWorkerTargetError(req.user, user);
+    if (targetError) {
+      return res.status(403).json({ error: targetError });
+    }
+    if (req.user.role === 'key_worker' && !canReachHome(req.user, 'staff', req.params.homeId)) {
+      return res.status(403).json({ error: 'Access denied. You can only change allocations for your own home.' });
     }
     
     const removed = user.removeHome(req.params.homeId);
@@ -287,7 +387,7 @@ router.delete('/:id/remove-home/:homeId', requireRole(['admin', 'key_worker']), 
 });
 
 // Set default home for user
-router.post('/:id/set-default-home', requireRole(['admin', 'key_worker']), async (req, res) => {
+router.post('/:id/set-default-home', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
     const { home_id } = req.body;
     
@@ -300,6 +400,11 @@ router.post('/:id/set-default-home', requireRole(['admin', 'key_worker']), async
       return res.status(404).json({ error: 'User not found' });
     }
     
+    const targetError = keyWorkerTargetError(req.user, user);
+    if (targetError) {
+      return res.status(403).json({ error: targetError });
+    }
+
     // Check if user has this home
     const hasHome = user.homes.some(home => home.home_id.toString() === home_id);
     if (!hasHome) {
@@ -319,7 +424,7 @@ router.post('/:id/set-default-home', requireRole(['admin', 'key_worker']), async
 router.get('/by-home/:homeId', async (req, res) => {
   try {
     // Non-admins can only list staff for a home they belong to.
-    if (req.user.role !== 'admin' && !getUserHomeIds(req.user).includes(req.params.homeId)) {
+    if (req.user.role !== 'admin' && !readsStaffInHome(req.user, req.params.homeId)) {
       return res.status(403).json({ error: 'Access denied. You can only view staff in your own home.' });
     }
     const users = await User.find({ 'homes.home_id': req.params.homeId });

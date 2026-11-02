@@ -34,6 +34,7 @@ const payrollRoutes = require('./routes/payroll');
 const overtimeRoutes = require('./routes/overtime');
 const pushRoutes = require('./routes/push');
 const organizationSettingsRoutes = require('./routes/organizationSettings');
+const keyWorkerAccessRoutes = require('./routes/keyWorkerAccess');
 
 // Import middleware
 const { authenticateToken } = require('./middleware/auth');
@@ -154,6 +155,7 @@ app.use('/api/payroll', authenticateToken, payrollRoutes);
 app.use('/api/overtime', authenticateToken, overtimeRoutes);
 app.use('/api/push', authenticateToken, pushRoutes);
 app.use('/api/organization-settings', authenticateToken, organizationSettingsRoutes);
+app.use('/api/key-worker-access', authenticateToken, keyWorkerAccessRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const ServiceUser = require('../models/ServiceUser');
+const KeyWorkerAccessSettings = require('../models/KeyWorkerAccessSettings');
 
 // Middleware to authenticate JWT token
 const authenticateToken = async (req, res, next) => {
@@ -18,7 +19,7 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Get user from database
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await User.findById(decoded.userId).select('-password +key_worker_access');
     if (!user) {
       return res.status(401).json({ 
         error: 'Invalid token. User not found.' 
@@ -35,6 +36,7 @@ const authenticateToken = async (req, res, next) => {
     // users live in. Resolved once per request; read via getUserHomeIds().
     if (user.role === 'key_worker') {
       user.$locals.serviceUserHomeIds = await ServiceUser.getHomeIdsForKeyWorker(user._id);
+      user.$locals.keyWorkerAccess = await KeyWorkerAccessSettings.resolveFor(user.key_worker_access);
     }
 
     // Add user to request object
@@ -76,6 +78,39 @@ const getUserHomeIds = (user) => {
     : [];
   const viaServiceUsers = (user.$locals && user.$locals.serviceUserHomeIds) || [];
   return [...new Set([...direct, ...viaServiceUsers])];
+};
+
+// Whether a user holds a level of key worker access (see KeyWorkerAccessSettings). Admins
+// hold everything. Other roles hold nothing: their access stays role-based.
+const hasAccess = (user, area, level = 'full') => {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (user.role !== 'key_worker') return false;
+  const value = user.$locals && user.$locals.keyWorkerAccess && user.$locals.keyWorkerAccess[area];
+  // `full` includes `view`.
+  return level === 'view' ? value === 'view' || value === 'full' : value === level;
+};
+
+// Whether the user reaches every home for this area. A hidden area never widens reach.
+const reachesAllHomes = (user, area) => {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return hasAccess(user, area, 'view') && user.$locals.keyWorkerAccess.home_scope === 'all';
+};
+
+// Whether the user reaches this home for this area.
+const canReachHome = (user, area, homeId) => {
+  if (reachesAllHomes(user, area)) return true;
+  return !!homeId && getUserHomeIds(user).includes(homeId.toString());
+};
+
+// Guards a route for key workers by access level. Other roles pass through, so pair this
+// with requireRole, which decides for them.
+const requireAccess = (area, level = 'full') => (req, res, next) => {
+  if (req.user && req.user.role === 'key_worker' && !hasAccess(req.user, area, level)) {
+    return res.status(403).json({ error: 'Your access level does not allow this. Please ask an admin.' });
+  }
+  next();
 };
 
 // True when the user is allowed to reach management-only functionality.
@@ -244,5 +279,9 @@ module.exports = {
   requireManager: requireRole(MANAGER_ROLES),
   MANAGER_ROLES,
   getUserHomeIds,
+  hasAccess,
+  reachesAllHomes,
+  canReachHome,
+  requireAccess,
   isManager
 };

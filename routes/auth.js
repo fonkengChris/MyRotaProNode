@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const KeyWorkerAccessSettings = require('../models/KeyWorkerAccessSettings');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -30,7 +31,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     // Find user by email and include password for comparison
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email }).select('+password +key_worker_access');
     if (!user) {
       return res.status(400).json({ 
         error: 'Invalid credentials' 
@@ -62,7 +63,10 @@ router.post('/login', [
     // Return user info (without password) and token
     res.json({
       message: 'Login successful',
-      user: user.publicInfo,
+      user: {
+        ...user.publicInfo,
+        access: user.role === 'key_worker' ? await KeyWorkerAccessSettings.resolveFor(user.key_worker_access) : undefined
+      },
       token,
       permissions: user.getPermissions()
     });
@@ -86,7 +90,9 @@ router.get('/me', authenticateToken, async (req, res) => {
       user: {
         ...user.publicInfo,
         // Homes reached through the key worker's service users (empty for other roles).
-        service_user_home_ids: req.user.$locals.serviceUserHomeIds || []
+        service_user_home_ids: req.user.$locals.serviceUserHomeIds || [],
+        // Effective key worker access (absent for other roles, whose access is role-based).
+        access: req.user.$locals.keyWorkerAccess
       },
       permissions: user.getPermissions()
     });
