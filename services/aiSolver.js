@@ -54,6 +54,7 @@ function isWeekendYmd(ymd) {
 
 
 const { isOneToOne, extraRosteredHours } = require('../utils/oneToOne');
+const { queueShiftChanges } = require('./shiftChangeNotifications');
 
 class AISolver {
   constructor() {
@@ -163,6 +164,8 @@ class AISolver {
   // options.allowedRoles: overrides AUTO_ASSIGNABLE_ROLES for callers that need a
   //   different pool (defaults to support workers only)
   async generateRota(weekStartDate, weekEndDate, homeIds, serviceId, existingShifts = [], options = {}) {
+    // Assignments saved so far, so staff are still told if a later week fails.
+    const newAssignments = [];
     try {
       await this.initialize();
       const allowedRoleList = options.allowedRoles || this.settings.auto_assignable_roles;
@@ -325,7 +328,7 @@ class AISolver {
         });
 
         if (hasValidShiftIds) {
-          await this.applyAssignmentsToDatabaseIncrementally(segmentAssignments);
+          await this.applyAssignmentsToDatabaseIncrementally(segmentAssignments, newAssignments);
         } else {
           console.log('AI Solver: Skipping database application for segment - shifts appear to be test data');
         }
@@ -376,6 +379,8 @@ class AISolver {
         success: false,
         error: error.message
       };
+    } finally {
+      if (options.notifyActorId) queueShiftChanges(options.notifyActorId, newAssignments);
     }
   }
 
@@ -1375,7 +1380,7 @@ class AISolver {
   }
 
   // Apply the assignments to the database incrementally to prevent double-booking
-  async applyAssignmentsToDatabaseIncrementally(assignments) {
+  async applyAssignmentsToDatabaseIncrementally(assignments, newAssignments = []) {
     try {
       // Sort assignments by date and time to process them chronologically
       const sortedAssignments = assignments.sort((a, b) => {
@@ -1399,6 +1404,7 @@ class AISolver {
 
         // Get current assignments for this shift
         const currentAssignedStaff = existingShift.assigned_staff || [];
+        const addedUserIds = [];
         
         // Process each new assignment for this shift
         for (const ass of assignment.assignments) {
@@ -1422,6 +1428,7 @@ class AISolver {
                 assigned_at: new Date(),
                 note: `AI Generated - Score: ${ass.score || 100}`
               });
+              addedUserIds.push(ass.user_id);
             } else {
               console.warn(`AI Solver: Skipping assignment of ${ass.user_id} to shift ${shiftId} due to overlap`);
             }
@@ -1433,6 +1440,9 @@ class AISolver {
         existingShift.status = currentAssignedStaff.length >= existingShift.required_staff_count ? 'fully_staffed' : 'understaffed';
         
         await existingShift.save();
+        for (const userId of addedUserIds) {
+          newAssignments.push({ userId, shift: existingShift, kind: 'assigned' });
+        }
       }
     } catch (error) {
       console.error('AI Solver: Error applying assignments to database:', error);

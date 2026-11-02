@@ -154,6 +154,7 @@ async function notifyAdminsHoursCapRequested(shift, staffUser, projectedHours, c
 }
 
 module.exports = {
+  safeSendMessage,
   notifyAdminsHoursCapRequested,
   notifyLateStaff,
   notifyManagement,

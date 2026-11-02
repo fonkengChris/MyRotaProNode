@@ -9,6 +9,11 @@ const ServiceUser = require('../models/ServiceUser');
 const User = require('../models/User');
 const SolverSettings = require('../models/SolverSettings');
 const { notifyAdminsHoursCapRequested } = require('../services/attendanceNotifications');
+const {
+  queueShiftChanges,
+  queueForAssignees,
+  queueShiftEdited,
+} = require('../services/shiftChangeNotifications');
 const { requireRole } = require('../middleware/auth');
 const {
   shiftStartDate,
@@ -444,8 +449,10 @@ router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (
     // Leaving the 1-to-1 type drops the service-user link.
     if (!isOneToOne(merged.shift_type)) data.service_user_id = null;
 
+    const before = shift.toObject();
     shift.set(data);
     await shift.save();
+    queueShiftEdited(req.user._id, before, shift);
     res.json(shift);
   } catch (error) {
     console.error('❌ Error updating shift:', error);
@@ -456,7 +463,7 @@ router.put('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (
 // Delete shift
 router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), async (req, res) => {
   try {
-    const existing = await Shift.findById(req.params.id).select('shift_type');
+    const existing = await Shift.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ error: 'Shift not found' });
     }
@@ -464,6 +471,7 @@ router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), asyn
       return res.status(403).json({ error: 'Only admins can delete 1-to-1 shifts' });
     }
     await Shift.findByIdAndDelete(req.params.id);
+    queueForAssignees(req.user._id, [existing], 'cancelled');
     res.json({ message: 'Shift deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete shift' });
@@ -673,6 +681,7 @@ router.post('/:id/assign', async (req, res) => {
       notifyAdminsHoursCapRequested(shift, staffUser, capExceptionHours, capPolicy.fulltime_hours)
         .catch((error) => console.error('Failed to notify admins of hours-cap request:', error));
     }
+    queueShiftChanges(currentUser._id, [{ userId: user_id, shift, kind: 'assigned' }]);
 
     const payload = shift.toObject({ virtuals: true });
     payload.rest_exception_pending = restExceptionPending;
@@ -715,8 +724,12 @@ async function confirmFlagged(field, req, res) {
   if (!assignment) {
     return res.status(404).json({ error: 'Staff member is not assigned to this shift' });
   }
+  const wasPending = assignment[field] === 'pending';
   assignment[field] = 'confirmed';
   await shift.save();
+  if (wasPending) {
+    queueShiftChanges(req.user._id, [{ userId: assignment.user_id, shift, kind: 'approved' }]);
+  }
   res.json(shift);
 }
 
@@ -738,6 +751,7 @@ async function removeFlagged(req, res) {
     throw error;
   }
   await shift.save();
+  queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
   res.json(shift);
 }
 
@@ -931,6 +945,7 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior
 
     shift.removeStaff(req.params.userId);
     await shift.save();
+    queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
     
     res.json(shift);
   } catch (error) {

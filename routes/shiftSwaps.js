@@ -5,6 +5,7 @@ const ShiftSwap = require('../models/ShiftSwap');
 const Shift = require('../models/Shift');
 const { requireRole, authenticateToken } = require('../middleware/auth');
 const shiftSwapService = require('../services/shiftSwapService');
+const { queueSwapCompleted } = require('../services/shiftChangeNotifications');
 
 // 409 body asking the caller to resend with `rest_consent: true` after showing the warnings.
 function restConsentRequired(restWarnings) {
@@ -326,6 +327,7 @@ router.post('/:id/approve', authenticateToken, async (req, res) => {
         requester: restWarnings.some((w) => w.user === 'requester'),
         target_user: restWarnings.some((w) => w.user === 'target_user')
       });
+      await queueSwapCompleted(req.user._id, claimed);
       const completed = await ShiftSwap.findById(claimed._id);
       res.json({
         ...completed.toObject(),

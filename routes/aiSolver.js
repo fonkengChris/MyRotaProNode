@@ -148,7 +148,8 @@ router.post('/generate-rota', [
       endDate,
       homeIdArray,
       service_id,
-      shifts
+      shifts,
+      { notifyActorId: req.user._id }
     );
 
     if (!result.success) {

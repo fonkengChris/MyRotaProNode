@@ -3,6 +3,7 @@ const router = express.Router();
 const Rota = require('../models/Rota');
 const Shift = require('../models/Shift');
 const { requireRole, getUserHomeIds } = require('../middleware/auth');
+const { queueForAssignees } = require('../services/shiftChangeNotifications');
 const mongoose = require('mongoose');
 
 function toYyyyMmDd(date) {
@@ -155,10 +156,12 @@ router.delete('/:id', requireRole(['admin', 'key_worker']), async (req, res) => 
       };
     }
 
+    const shiftsToUnassign = await Shift.find(unassignFilter).lean();
     const unassignResult = await Shift.updateMany(
       unassignFilter,
       { $set: { assigned_staff: [] } }
     );
+    queueForAssignees(req.user._id, shiftsToUnassign, 'removed');
 
     await Rota.findByIdAndDelete(req.params.id);
 

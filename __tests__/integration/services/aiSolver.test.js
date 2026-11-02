@@ -3,6 +3,8 @@ process.env.NODE_ENV = 'test';
 const AISolver = require('../../../services/aiSolver');
 const SolverSettings = require('../../../models/SolverSettings');
 const Shift = require('../../../models/Shift');
+const Message = require('../../../models/Message');
+const { flushShiftChangeNotifications } = require('../../../services/shiftChangeNotifications');
 const { restHoursBetween, capHoursAfterBreak } = require('../../../utils/shiftHours');
 const { createTestUser, createTestHome, createTestService, createTestShift } = require('../../../tests/utils/testHelpers');
 
@@ -68,6 +70,11 @@ function longestRun(shifts) {
   return best;
 }
 
+async function assignmentCounts(homeId) {
+  const byUser = await assignedShiftsByUser(homeId);
+  return Object.fromEntries(Object.entries(byUser).map(([id, shifts]) => [id, shifts.length]));
+}
+
 describe('AISolver end to end', () => {
   test('default rules: only support workers, no overlaps, at least 8h rest', async () => {
     const { home, service, staff } = await seedWeek();
@@ -85,6 +92,33 @@ describe('AISolver end to end', () => {
       const weekHours = shifts.reduce((sum, s) => sum + capHoursAfterBreak(s, home.break_policy), 0);
       expect(weekHours).toBeLessThanOrEqual(48);
     }
+  });
+
+  test('tells each newly assigned person once', async () => {
+    const { home, service } = await seedWeek();
+    const admin = await createTestUser({ email: `solver-admin${Date.now()}@example.com`, role: 'admin' });
+    const generate = () => new AISolver().generateRota(
+      new Date(WEEK[0]), new Date(WEEK[6]), [home._id.toString()], service._id.toString(), [],
+      { notifyActorId: admin._id }
+    );
+
+    expect((await generate()).success).toBe(true);
+    await flushShiftChangeNotifications();
+
+    const assignedIds = Object.keys(await assignedShiftsByUser(home._id));
+    expect(assignedIds.length).toBeGreaterThan(0);
+    const messages = await Message.find({ from_user_id: admin._id });
+    expect(messages.map((m) => String(m.to_user_id)).sort()).toEqual([...assignedIds].sort());
+
+    // Re-running only announces assignments it actually adds.
+    const countsBefore = await assignmentCounts(home._id);
+    await Message.deleteMany({});
+    await generate();
+    await flushShiftChangeNotifications();
+    const countsAfter = await assignmentCounts(home._id);
+    const gained = Object.keys(countsAfter).filter((id) => countsAfter[id] > (countsBefore[id] || 0));
+    const rerunMessages = await Message.find({ from_user_id: admin._id });
+    expect(rerunMessages.map((m) => String(m.to_user_id)).sort()).toEqual(gained.sort());
   });
 
   test('admin-edited rules change the generated rota', async () => {

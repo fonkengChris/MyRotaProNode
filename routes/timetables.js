@@ -8,6 +8,7 @@ const User = require('../models/User');
 const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { buildTimetableSnapshot, applySnapshot } = require('../services/timetableSync');
+const { queueForAssignees } = require('../services/shiftChangeNotifications');
 const { createTimetableHomePdf, homeIdStr, safeFilePart } = require('../utils/timetablePdf');
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -562,7 +563,9 @@ router.delete('/:id', [
       if (rotasAffectedIds.length) {
         await Rota.deleteMany({ _id: { $in: rotasAffectedIds }, shifts: { $size: 0 } });
       }
+      const shiftsToDelete = await Shift.find({ _id: { $in: shiftIds } }).lean();
       const del = await Shift.deleteMany({ _id: { $in: shiftIds } });
+      queueForAssignees(req.user._id, shiftsToDelete, 'cancelled');
       shiftsDeleted = del.deletedCount ?? 0;
     }
 
@@ -707,7 +710,8 @@ async function generateTimetableAsync(timetableId, userId) {
           new Date(timetable.end_date),
           timetable.home_ids,
           timetable.service_id ?? undefined,
-          []
+          [],
+          { notifyActorId: userId }
         ),
         fullGenerationTimeoutMs,
         `Timetable generation timed out after ${fullGenerationTimeoutMs / 1000} seconds`
