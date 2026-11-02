@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const ServiceUser = require('../models/ServiceUser');
 const Home = require('../models/Home');
 const User = require('../models/User');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, hasAccess, getUserHomeIds } = require('../middleware/auth');
 
 const HOME_FIELDS = 'name location contact_info operating_hours capacity is_active';
 const KEY_WORKER_FIELDS = 'name email phone role';
@@ -12,7 +12,12 @@ const STAFF_FIELDS = 'name email phone role type homes is_active';
 
 const isValidId = (id) => !!id && id !== 'undefined' && id !== 'null' && mongoose.Types.ObjectId.isValid(id);
 
-// Admins see every service user; key workers only those they support.
+// The homes a key worker's "all service users" view is limited to, or null for no limit.
+const serviceUserHomeLimit = (user) =>
+  user.role === 'key_worker' && user.$locals.keyWorkerAccess.home_scope === 'own' ? getUserHomeIds(user) : null;
+
+// Admins see every service user; key workers those they support, plus (read-only) the rest
+// if their access allows it.
 const canListServiceUsers = (req, res, next) => {
   if (!['admin', 'key_worker'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Access denied. Only admins and key workers can view service users.' });
@@ -67,7 +72,8 @@ async function buildServiceUserData(body, { partial = false } = {}) {
   return { data };
 }
 
-// Get service users (admins: all, filterable; key workers: their own caseload)
+// Get service users (admins, and key workers with the all view: all, filterable; other key
+// workers: their own caseload)
 router.get('/', canListServiceUsers, async (req, res) => {
   try {
     const { home_id, key_worker_id, is_active } = req.query;
@@ -76,8 +82,15 @@ router.get('/', canListServiceUsers, async (req, res) => {
     if (isValidId(home_id)) filter.home_id = home_id;
     if (is_active !== undefined) filter.is_active = is_active === 'true';
 
-    if (req.user.role === 'admin') {
+    if (hasAccess(req.user, 'service_users', 'all')) {
       if (isValidId(key_worker_id)) filter.key_worker_ids = key_worker_id;
+      const homeLimit = serviceUserHomeLimit(req.user);
+      if (homeLimit) {
+        if (filter.home_id && !homeLimit.includes(String(filter.home_id))) {
+          return res.status(403).json({ error: 'Access denied. You can only view service users in your own homes.' });
+        }
+        if (!filter.home_id) filter.home_id = { $in: homeLimit };
+      }
     } else {
       filter.key_worker_ids = req.user._id;
     }
@@ -131,7 +144,7 @@ router.get('/my-caseload', canListServiceUsers, async (req, res) => {
   }
 });
 
-// Get service user by ID (admin, or a key worker who supports them)
+// Get service user by ID (admin, a key worker who supports them, or one with the all view)
 router.get('/:id', canListServiceUsers, async (req, res) => {
   try {
     if (!isValidId(req.params.id)) {
@@ -146,7 +159,10 @@ router.get('/:id', canListServiceUsers, async (req, res) => {
 
     if (req.user.role !== 'admin') {
       const supports = serviceUser.key_worker_ids.some(kw => kw._id.toString() === req.user._id.toString());
-      if (!supports) {
+      const homeLimit = serviceUserHomeLimit(req.user);
+      const homeId = serviceUser.home_id && serviceUser.home_id._id ? serviceUser.home_id._id : serviceUser.home_id;
+      const viaAllView = hasAccess(req.user, 'service_users', 'all') && (!homeLimit || homeLimit.includes(String(homeId)));
+      if (!supports && !viaAllView) {
         return res.status(403).json({ error: 'Access denied. You can only view service users you support.' });
       }
     }

@@ -8,6 +8,7 @@ process.env.RATE_LIMIT_MAX_REQUESTS = '100000';
 const request = require('supertest');
 const app = require('../../../server');
 const User = require('../../../models/User');
+const ServiceUser = require('../../../models/ServiceUser');
 const Rota = require('../../../models/Rota');
 const WeeklySchedule = require('../../../models/WeeklySchedule');
 const KeyWorkerAccessSettings = require('../../../models/KeyWorkerAccessSettings');
@@ -53,6 +54,7 @@ describe('key worker access', () => {
         shift_selection: 'hidden',
         shift_swaps: 'hidden',
         my_hours: 'hidden',
+        service_users: 'all',
         home_scope: 'all',
       });
     });
@@ -407,6 +409,66 @@ describe('key worker access', () => {
         .expect(200);
       const names = JSON.stringify(res.body);
       expect(names).not.toContain(String(keyWorker._id));
+    });
+  });
+
+  describe('service users', () => {
+    let mine, other;
+    const names = (res) => res.body.map((su) => su.name).sort();
+
+    beforeEach(async () => {
+      mine = await ServiceUser.create({ name: 'Mine', home_id: homeA._id, key_worker_ids: [keyWorker._id] });
+      other = await ServiceUser.create({ name: 'Other', home_id: homeB._id, key_worker_ids: [] });
+    });
+
+    test('by default key workers can see all service users', async () => {
+      const res = await request(app).get('/api/service-users').set(as(keyWorker)).expect(200);
+      expect(names(res)).toEqual(['Mine', 'Other']);
+      await request(app).get(`/api/service-users/${other._id}`).set(as(keyWorker)).expect(200);
+      const filtered = await request(app).get(`/api/service-users?key_worker_id=${keyWorker._id}`).set(as(keyWorker)).expect(200);
+      expect(names(filtered)).toEqual(['Mine']);
+    });
+
+    test('the own view limits them to their caseload', async () => {
+      await setAccess({ service_users: 'own' });
+      const res = await request(app).get('/api/service-users').set(as(keyWorker)).expect(200);
+      expect(names(res)).toEqual(['Mine']);
+      await request(app).get(`/api/service-users/${other._id}`).set(as(keyWorker)).expect(403);
+    });
+
+    test('a per-person override beats the default', async () => {
+      await setAccess({ service_users: 'own' });
+      await request(app).put(`/api/users/${keyWorker._id}/key-worker-access`).set(as(admin)).send({ service_users: 'all' }).expect(200);
+      const res = await request(app).get('/api/service-users').set(as(keyWorker)).expect(200);
+      expect(names(res)).toEqual(['Mine', 'Other']);
+    });
+
+    test('own-homes scope also limits the all view', async () => {
+      await setAccess({ home_scope: 'own' });
+      const res = await request(app).get('/api/service-users').set(as(keyWorker)).expect(200);
+      expect(names(res)).toEqual(['Mine']);
+      await request(app).get(`/api/service-users?home_id=${homeB._id}`).set(as(keyWorker)).expect(403);
+      await request(app).get(`/api/service-users/${other._id}`).set(as(keyWorker)).expect(403);
+      await request(app).get(`/api/service-users/${mine._id}`).set(as(keyWorker)).expect(200);
+    });
+
+    test('seeing a service user does not give access to their home', async () => {
+      await setAccess({ home_scope: 'own' });
+      await setAccess({ service_users: 'all' });
+      await request(app).get(`/api/homes/${homeB._id}`).set(as(keyWorker)).expect(403);
+      const caseload = await request(app).get('/api/service-users/my-caseload').set(as(keyWorker)).expect(200);
+      expect(caseload.body.flatMap((e) => e.service_users.map((su) => su.name))).toEqual(['Mine']);
+    });
+
+    test('it is read-only: key workers cannot add, edit or delete', async () => {
+      await request(app).post('/api/service-users').set(as(keyWorker)).send({ name: 'New', home_id: homeA._id }).expect(403);
+      await request(app).put(`/api/service-users/${other._id}`).set(as(keyWorker)).send({ name: 'x' }).expect(403);
+      await request(app).delete(`/api/service-users/${other._id}`).set(as(keyWorker)).expect(403);
+    });
+
+    test('other staff still cannot see service users', async () => {
+      await request(app).get('/api/service-users').set(as(worker)).expect(403);
+      await request(app).get(`/api/service-users/${mine._id}`).set(as(worker)).expect(403);
     });
   });
 

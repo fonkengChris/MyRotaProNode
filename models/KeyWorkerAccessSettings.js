@@ -6,11 +6,14 @@ const mongoose = require('mongoose');
 //
 // staff/weekly_schedules/rota: hidden (no page, no writes), view (read only) or full.
 // shift_selection/shift_swaps/my_hours: personal pages, hidden or visible.
+// service_users: read-only view of `all` service users, or just their `own` caseload. Home
+// reach still comes from the caseload (getUserHomeIds), and home_scope limits this list too.
 // home_scope: `all` homes, or `own` (getUserHomeIds: their homes + their service users' homes).
 
 const LEVELS = ['hidden', 'view', 'full'];
 const VISIBILITY = ['hidden', 'visible'];
 const HOME_SCOPES = ['all', 'own'];
+const SERVICE_USER_VIEWS = ['all', 'own'];
 
 const FIELD_VALUES = {
   staff: LEVELS,
@@ -19,6 +22,7 @@ const FIELD_VALUES = {
   shift_selection: VISIBILITY,
   shift_swaps: VISIBILITY,
   my_hours: VISIBILITY,
+  service_users: SERVICE_USER_VIEWS,
   home_scope: HOME_SCOPES
 };
 
@@ -29,6 +33,7 @@ const DEFAULTS = {
   shift_selection: 'hidden',
   shift_swaps: 'hidden',
   my_hours: 'hidden',
+  service_users: 'all',
   home_scope: 'all'
 };
 

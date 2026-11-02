@@ -102,7 +102,8 @@ describe('Service Users Routes', () => {
       await ServiceUser.create({ name: 'Blake', home_id: homeB._id, key_worker_ids: [] });
     });
 
-    test('key worker only sees the service users they support', async () => {
+    test('with the own view, key worker only sees the service users they support', async () => {
+      await KeyWorkerAccessSettings.create({ service_users: 'own' });
       const response = await request(app)
         .get('/api/service-users')
         .set('Authorization', getAuthHeader(keyWorker._id))
