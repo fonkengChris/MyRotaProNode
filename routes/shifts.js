@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
+const moment = require('moment-timezone');
 
 const CAP_CONFLICT = 'fulltime_weekly_cap_exceeded';
 // Rule breaks a staff member's own shift selection may go ahead with, pending review.
@@ -756,6 +758,146 @@ router.post('/:id/assign', async (req, res) => {
   }
 });
 
+const shiftMatchKey = (shift) => [
+  shift.date,
+  shift.start_time,
+  shift.end_time,
+  shift.shift_type,
+  shift.service_id,
+  shift.service_user_id || '',
+].join('|');
+
+// Copy a Mon–Sun week's allocated shifts and their staff to the following week. A shift already
+// in that week with the same details is filled rather than doubled, so re-running is safe. Staff
+// are re-checked against next week's rules with no override: anyone who fails stays off the copy
+// and is reported, and past approvals, flags and attendance are not carried over.
+router.post('/duplicate-week', requireRole(['admin', 'key_worker', 'senior_staff']), requireAccess('rota'), async (req, res) => {
+  try {
+    const { home_id: homeId, week_start: weekStart } = req.body;
+    if (typeof homeId !== 'string' || !mongoose.Types.ObjectId.isValid(homeId)) {
+      return res.status(400).json({ error: 'Valid home_id is required' });
+    }
+    const monday = moment.utc(typeof weekStart === 'string' ? weekStart : '', 'YYYY-MM-DD', true);
+    if (!monday.isValid() || monday.isoWeekday() !== 1) {
+      return res.status(400).json({ error: 'week_start must be a Monday in YYYY-MM-DD format' });
+    }
+    if (keyWorkerOutOfScope(req.user, 'rota', homeId)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
+
+    const nextWeekDate = (date) => moment.utc(date, 'YYYY-MM-DD').add(7, 'days').format('YYYY-MM-DD');
+    const weekDates = (start) => ({ $gte: start.format('YYYY-MM-DD'), $lte: start.clone().add(6, 'days').format('YYYY-MM-DD') });
+    const isAllocated = (a) => a.status !== 'declined';
+
+    const [sourceShifts, existingShifts] = await Promise.all([
+      Shift.find({ home_id: homeId, is_active: true, date: weekDates(monday) }),
+      Shift.find({ home_id: homeId, is_active: true, date: weekDates(monday.clone().add(7, 'days')) }),
+    ]);
+    // Background shifts go first: a copied 1-to-1 is judged against its staff member's background shift.
+    const allocated = sourceShifts
+      .filter((shift) => shift.assigned_staff.some(isAllocated))
+      .sort((a, b) => isOneToOne(a) - isOneToOne(b)
+        || `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`));
+
+    const staffIds = allocated.flatMap((shift) => shift.assigned_staff.map((a) => a.user_id));
+    const staff = await User.find({ _id: { $in: staffIds } }).select('name is_active').lean();
+    const staffById = new Map(staff.map((member) => [String(member._id), member]));
+
+    // Each existing shift can stand in for only one source shift (identical shifts can coexist).
+    const unmatched = new Map();
+    for (const shift of existingShifts) {
+      const key = shiftMatchKey(shift);
+      unmatched.set(key, [...(unmatched.get(key) || []), shift]);
+    }
+
+    const { manual_assign_cap: capPolicy } = await SolverSettings.getSettings();
+    const now = new Date();
+    const result = {
+      target_week_start: monday.clone().add(7, 'days').format('YYYY-MM-DD'),
+      source_shifts: allocated.length,
+      shifts_created: 0,
+      shifts_updated: 0,
+      assignments_copied: 0,
+      skipped: [],
+    };
+
+    for (const source of allocated) {
+      const fields = {
+        home_id: source.home_id,
+        service_id: source.service_id,
+        service_user_id: source.service_user_id,
+        date: nextWeekDate(source.date),
+        start_time: source.start_time,
+        end_time: source.end_time,
+        shift_type: source.shift_type,
+        required_staff_count: source.required_staff_count,
+        notes: source.notes,
+      };
+      const skip = (reason, staffName = null) => result.skipped.push({
+        date: fields.date,
+        start_time: fields.start_time,
+        end_time: fields.end_time,
+        shift_type: fields.shift_type,
+        staff_name: staffName,
+        reason,
+      });
+
+      // The scheduler would immediately mark these missed, so a part-gone week keeps only what's ahead.
+      if (shiftStartDate(fields) < now) {
+        skip('This shift has already started');
+        continue;
+      }
+      const ruleError = await checkOneToOneRules(req, fields, null);
+      if (ruleError) {
+        skip((ruleError.details && ruleError.details[0]) || ruleError.error);
+        continue;
+      }
+
+      const target = (unmatched.get(shiftMatchKey(fields)) || []).shift() || new Shift(fields);
+      const isNew = target.isNew;
+      const added = [];
+      for (const assignment of source.assigned_staff.filter(isAllocated)) {
+        const userId = String(assignment.user_id);
+        const member = staffById.get(userId);
+        if (!member || !member.is_active) {
+          skip('No longer an active staff member', member ? member.name : 'Unknown');
+          continue;
+        }
+        if (target.assigned_staff.some((a) => String(a.user_id) === userId)) continue;
+
+        const decision = await evaluateAssignment({ shift: target, userId, currentUser: req.user, override: false, capPolicy });
+        if (decision.error) {
+          skip(decision.error.body.message || decision.error.body.error, member.name);
+        } else if (decision.pendingReasons.length > 0) {
+          skip(decision.pendingReasons.join('; '), member.name);
+        } else {
+          target.assignStaff(userId, assignment.note);
+          added.push(userId);
+        }
+      }
+
+      if (isNew || added.length > 0) {
+        try {
+          await target.save();
+        } catch (error) {
+          if (error.name !== 'ValidationError') throw error;
+          skip(Object.values(error.errors).map((err) => err.message).join('; '));
+          continue;
+        }
+        if (isNew) result.shifts_created += 1;
+        else result.shifts_updated += 1;
+        result.assignments_copied += added.length;
+        queueShiftChanges(req.user._id, added.map((userId) => ({ userId, shift: target, kind: 'assigned' })));
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error duplicating week:', error);
+    res.status(500).json({ error: 'Failed to copy this week. Anything already copied was kept, so it is safe to try again.' });
+  }
+});
+
 // Approve a flagged assignment: set `field` to 'confirmed' and keep the staff member on it.
 async function confirmFlagged(field, req, res) {
   const shift = await Shift.findById(req.params.id);
@@ -1002,7 +1144,6 @@ router.get('/conflicts/check', requireRole(['admin', 'key_worker', 'senior_staff
   try {
     const { home_id, start_date, end_date } = req.query;
     
-    const mongoose = require('mongoose');
     if (!home_id || home_id === 'null' || home_id === 'undefined') {
       return res.status(400).json({ error: 'Valid home_id is required' });
     }
