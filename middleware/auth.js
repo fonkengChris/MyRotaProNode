@@ -31,6 +31,13 @@ const authenticateToken = async (req, res, next) => {
         error: 'Account is deactivated.' 
       });
     }
+
+    // A password change or reset revokes every token issued before it.
+    if (user.password_changed_at && decoded.iat * 1000 < user.password_changed_at.getTime()) {
+      return res.status(401).json({
+        error: 'Password was changed. Please log in again.'
+      });
+    }
     
     // Key workers aren't tied to houses: they also reach the homes their service
     // users live in. Resolved once per request; read via getUserHomeIds().

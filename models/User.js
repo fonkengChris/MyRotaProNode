@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const KeyWorkerAccessSettings = require('./KeyWorkerAccessSettings');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { defaultRateForRole, MAX_HOURLY_RATE_GBP } = require('../utils/payRates');
 
 // Legacy role values that predate a rename, mapped to their current canonical role.
@@ -25,6 +26,12 @@ function roleQueryValue(role) {
   const canonical = normalizeRole(role);
   const legacy = CANONICAL_TO_LEGACY[canonical];
   return legacy && legacy.length ? { $in: [canonical, ...legacy] } : canonical;
+}
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+
+function hashResetToken(token) {
+  return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
 const keyWorkerAccessOverrideFields = {};
@@ -58,6 +65,27 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Password is required'],
     minlength: [8, 'Password must be at least 8 characters long'],
     select: false // Don't include password in queries by default
+  },
+  // Self-service reset (POST /api/auth/forgot-password). Only the sha256 hash of the
+  // emailed token is stored; it is single-use and expires after an hour.
+  password_reset_token_hash: {
+    type: String,
+    select: false
+  },
+  password_reset_expires: {
+    type: Date,
+    select: false
+  },
+  // Set whenever the password changes; JWTs issued before it are rejected by the
+  // auth middleware so a reset signs out every old session.
+  password_changed_at: {
+    type: Date
+  },
+  // Set when an admin resets the password to a temporary one; the user is sent to
+  // Settings › Password until they choose their own.
+  must_change_password: {
+    type: Boolean,
+    default: false
   },
   role: {
     type: String,
@@ -209,7 +237,13 @@ userSchema.pre('save', async function(next) {
 
   // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) return next();
-  
+
+  // Backdated a second so a token issued in the same second (JWT iat is whole
+  // seconds) as this change is still accepted.
+  if (!this.isNew) {
+    this.password_changed_at = new Date(Date.now() - 1000);
+  }
+
   try {
     // Hash password with cost of 12
     const hashedPassword = await bcrypt.hash(this.password, 12);
@@ -223,6 +257,15 @@ userSchema.pre('save', async function(next) {
 // Instance method to check password
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+// Instance method to start a self-service password reset. Stores the token hash and
+// expiry on the document (caller saves) and returns the raw token for the email link.
+userSchema.methods.createPasswordResetToken = function() {
+  const token = crypto.randomBytes(32).toString('hex');
+  this.password_reset_token_hash = hashResetToken(token);
+  this.password_reset_expires = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+  return token;
 };
 
 // Instance method to get user permissions
@@ -294,6 +337,7 @@ userSchema.methods.removeHome = function(homeId) {
 // Expose role helpers on the model so routes/services can build legacy-aware filters.
 userSchema.statics.normalizeRole = normalizeRole;
 userSchema.statics.roleQueryValue = roleQueryValue;
+userSchema.statics.hashResetToken = hashResetToken;
 
 userSchema.statics.findByRoleAndHome = function(role, homeId) {
   const roleFilter = roleQueryValue(role);
@@ -324,7 +368,8 @@ userSchema.virtual('publicInfo').get(function() {
     is_active: this.is_active,
     skills: this.skills,
     preferred_shift_types: this.preferred_shift_types,
-    max_hours_per_week: this.max_hours_per_week
+    max_hours_per_week: this.max_hours_per_week,
+    must_change_password: this.must_change_password
   };
 });
 
@@ -333,6 +378,8 @@ userSchema.set('toJSON', {
   virtuals: true,
   transform: function(doc, ret) {
     delete ret.password;
+    delete ret.password_reset_token_hash;
+    delete ret.password_reset_expires;
     return ret;
   }
 });
@@ -340,6 +387,8 @@ userSchema.set('toObject', {
   virtuals: true,
   transform: function(doc, ret) {
     delete ret.password;
+    delete ret.password_reset_token_hash;
+    delete ret.password_reset_expires;
     return ret;
   }
 });

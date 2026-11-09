@@ -319,6 +319,41 @@ router.post('/:id/deactivate', requireRole(['admin', 'key_worker']), requireAcce
   }
 });
 
+// Reset another user's password to a temporary one (for staff who forgot theirs and
+// can't use the emailed link). They must choose their own at next login.
+router.post('/:id/reset-password', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long' });
+    }
+    if (req.params.id === req.user._id.toString()) {
+      return res.status(400).json({ error: 'Use Settings › Password to change your own password.' });
+    }
+
+    const user = await User.findById(req.params.id).select('+password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    // Taking over another key worker's login is as strong as removing them.
+    const removalError = keyWorkerRemovalError(req.user, user);
+    if (removalError) {
+      return res.status(403).json({ error: removalError });
+    }
+
+    user.password = newPassword;
+    user.must_change_password = true;
+    user.password_reset_token_hash = undefined;
+    user.password_reset_expires = undefined;
+    await user.save();
+
+    res.json({ message: `Password reset for ${user.name}. They will be asked to choose a new one when they sign in.` });
+  } catch (error) {
+    console.error('Admin reset password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
 // Add home to user
 router.post('/:id/add-home', requireRole(['admin', 'key_worker']), requireAccess('staff'), async (req, res) => {
   try {
