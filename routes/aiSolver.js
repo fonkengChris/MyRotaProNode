@@ -318,7 +318,7 @@ router.post('/validate-rota', [
 const LOCKED_RULES = [
   { key: 'no_double_booking', name: 'No double booking', description: 'Staff are never auto-assigned to overlapping shifts.' },
   { key: 'respect_time_off', name: 'Respect approved time off', description: 'Staff on approved leave are never auto-assigned.' },
-  { key: 'respect_unavailability', name: 'Respect unavailability', description: 'Staff who marked a day as unavailable are never auto-assigned that day.' },
+  { key: 'respect_unavailability', name: 'Respect availability', description: 'Staff are never auto-assigned on a day marked unavailable, or outside the hours of a day marked partially available.' },
   { key: 'home_access', name: 'Home access', description: 'Staff are only assigned to homes they are linked to.' },
   { key: 'one_to_one_manual', name: '1-to-1 shifts are manual', description: 'The solver never creates or assigns 1-to-1 shifts; they are managed by hand on the rota.' }
 ];

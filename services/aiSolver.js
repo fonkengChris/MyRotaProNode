@@ -76,6 +76,7 @@ function isWeekendYmd(ymd) {
 
 
 const { isOneToOne, extraRosteredHours } = require('../utils/oneToOne');
+const { availabilityConflict } = require('../utils/availability');
 const { queueShiftChanges } = require('./shiftChangeNotifications');
 
 class AISolver {
@@ -769,21 +770,15 @@ class AISolver {
         
         if (onLeave(shiftDate) || (nextDate && onLeave(nextDate))) {
           score = 0; // Time off approved
-        } else if ((availability && !availability.is_available) || (nextAvailability && !nextAvailability.is_available)) {
-          score = 0; // Explicitly marked as unavailable
+        } else if (availabilityConflict({ date: shiftDate, start_time: shift.start_time, end_time: shift.end_time }, availability, nextAvailability)) {
+          score = 0; // Marked unavailable, or the shift runs outside a partial day's hours
         } else {
-          // Staff is available (either no record exists or explicitly marked as available)
+          // Staff is available (no record, available, or a partial window that holds the shift)
           
           // Apply soft constraints if availability data exists
           const preferredType = availability && availability.preferred_shift_type;
           if (preferredType && preferredType !== 'none' && preferredType !== shift.shift_type) {
             score -= scoring.non_preferred_shift_type_penalty;
-          }
-          
-          if (availability && availability.start_time && 
-              availability.end_time &&
-              !this.shiftFitsWindow(shift, availability.start_time, availability.end_time)) {
-            score -= scoring.outside_available_hours_penalty;
           }
           
           // Apply employment type constraints with multi-home awareness
@@ -1253,23 +1248,6 @@ class AISolver {
     return totalPenalty;
   }
 
-  // Whether the whole shift (start to end, not just its start) sits inside the availability
-  // window. Either may run past midnight; a window ending 23:59 counts as running to midnight.
-  shiftFitsWindow(shift, windowStart, windowEnd) {
-    const DAY = 24 * 60;
-    const shiftStart = this.timeToMinutes(shift.start_time);
-    let shiftEnd = this.timeToMinutes(shift.end_time);
-    if (shiftEnd <= shiftStart) shiftEnd += DAY;
-    const winStart = this.timeToMinutes(windowStart);
-    let winEnd = this.timeToMinutes(windowEnd);
-    if (winEnd === DAY - 1) winEnd = DAY;
-    if (winEnd <= winStart) winEnd += DAY;
-    // An overnight window also covers a shift starting after midnight (e.g. 20:00-08:00 holds 02:00-06:00).
-    return [0, DAY].some(offset =>
-      shiftStart + offset >= winStart && shiftEnd + offset <= winEnd
-    );
-  }
-  
   // Helper method to convert time string to minutes
   timeToMinutes(time) {
     const [hours, minutes] = time.split(':').map(Number);

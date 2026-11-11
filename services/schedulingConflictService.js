@@ -1,4 +1,6 @@
 const TimeOffRequest = require('../models/TimeOffRequest');
+const Availability = require('../models/Availability');
+const { availabilityConflict } = require('../utils/availability');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
 const SolverSettings = require('../models/SolverSettings');
@@ -20,6 +22,7 @@ const MIN_REST_HOURS = SolverSettings.DEFAULTS.min_rest_hours;
 // excluded — same-time double-booking is always blocked.
 const OVERRIDABLE_CONFLICT_TYPES = new Set([
   'time_off',
+  'unavailable',
   'max_hours_exceeded',
   'fulltime_weekly_cap_exceeded',
   'insufficient_rest',
@@ -86,6 +89,19 @@ class SchedulingConflictService {
       console.error('Error checking time-off conflicts:', error);
       throw error;
     }
+  }
+
+  /**
+   * Whether a shift falls outside the user's declared availability (see utils/availability).
+   * @param {string} userId
+   * @param {{ date: string, start_time: string, end_time: string }} shift
+   * @returns {Promise<null | { date: string, status: string, message: string }>}
+   */
+  static async checkAvailabilityConflict(userId, shift) {
+    const nextDate = this._restWindowDates(shift.date)[3];
+    const records = await Availability.find({ user_id: userId, date: { $in: [shift.date, nextDate] } }).lean();
+    const on = (date) => records.find((r) => r.date === date);
+    return availabilityConflict(shift, on(shift.date), on(nextDate));
   }
 
   /**
@@ -179,6 +195,18 @@ class SchedulingConflictService {
           conflictType: 'time_off',
           conflicts: timeOffConflicts,
           message: `User has approved time off on ${shiftDate}`
+        });
+      }
+
+      // Outside what the person declared for the day (unavailable, or a partial day's hours).
+      // An overnight shift also needs the following day.
+      const availability = await this.checkAvailabilityConflict(userId, candidate);
+      if (availability) {
+        overridableConflicts.push({
+          conflictType: 'unavailable',
+          conflicts: [],
+          message: availability.message,
+          details: { date: availability.date, status: availability.status }
         });
       }
 

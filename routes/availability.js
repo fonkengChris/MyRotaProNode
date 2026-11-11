@@ -116,26 +116,20 @@ router.post('/', async (req, res) => {
 
     const { pre_leave, ...body } = req.body;
 
-    // Check if there's already an availability record for this user and date
+    // One record per user and date: posting again replaces that day's entry. Saved through the
+    // document (not findOneAndUpdate) so the status rules in the model's validate hook run.
     const existingAvailability = await Availability.findOne({
       user_id: body.user_id,
       date: body.date
     });
 
     if (existingAvailability) {
-      // Update the existing record with the new data
-      const updatedAvailability = await Availability.findByIdAndUpdate(
-        existingAvailability._id,
-        body,
-        { new: true, runValidators: true }
-      );
-
-      res.json(updatedAvailability);
+      existingAvailability.set(body);
+      await existingAvailability.save();
+      res.json(existingAvailability);
     } else {
-      // Create new availability record
       const availability = new Availability(body);
       await availability.save();
-      
       res.status(201).json(availability);
     }
   } catch (error) {
@@ -170,15 +164,12 @@ router.put('/:id', async (req, res) => {
     if (await onApprovedLeave(existing.user_id, existing.date, updates.date)) {
       return leaveLocked(res);
     }
-    const availability = await Availability.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      { new: true, runValidators: true }
-    );
+    existing.set(updates);
+    await existing.save();
 
-    res.json(availability);
+    res.json(existing);
   } catch (error) {
-    res.status(400).json({ error: 'Failed to update availability record' });
+    res.status(400).json({ error: 'Failed to update availability record', details: error.message });
   }
 });
 

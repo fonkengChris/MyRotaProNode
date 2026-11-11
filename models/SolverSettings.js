@@ -60,7 +60,6 @@ const DEFAULTS = {
   },
   scoring: {
     non_preferred_shift_type_penalty: 30,
-    outside_available_hours_penalty: 20,
     default_home_sort_boost: 20
   },
   fairness: {
@@ -126,7 +125,6 @@ const solverSettingsSchema = new mongoose.Schema({
   },
   scoring: {
     non_preferred_shift_type_penalty: scoreField,
-    outside_available_hours_penalty: scoreField,
     default_home_sort_boost: scoreField
   },
   fairness: {

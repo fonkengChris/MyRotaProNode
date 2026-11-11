@@ -221,12 +221,22 @@ describe('AISolver availability preferences', () => {
     expect(scoreFor(s, [availability({ is_available: false })])).toBe(0);
   });
 
-  test('penalises a shift that starts inside the window but ends after it', () => {
-    const penalty = SolverSettings.DEFAULTS.scoring.outside_available_hours_penalty;
-    const window = [availability({ start_time: '09:00', end_time: '17:00' })];
-    const inside = scoreFor(shift('2026-10-05', '09:00', '17:00'), window);
-    const overruns = scoreFor(shift('2026-10-05', '16:00', '23:00'), window);
-    expect(inside - overruns).toBe(penalty);
+  test("a day marked status 'unavailable' scores zero", () => {
+    const s = shift('2026-10-05', '08:00', '16:00');
+    expect(scoreFor(s, [availability({ status: 'unavailable' })])).toBe(0);
+  });
+
+  test('a partial day only allows shifts inside its hours', () => {
+    const window = [availability({ status: 'partial', start_time: '09:00', end_time: '17:00' })];
+    expect(scoreFor(shift('2026-10-05', '09:00', '17:00'), window)).toBeGreaterThan(0);
+    expect(scoreFor(shift('2026-10-05', '16:00', '23:00'), window)).toBe(0);
+    expect(scoreFor(shift('2026-10-05', '08:00', '12:00'), window)).toBe(0);
+  });
+
+  test("an available day's old time range is not a restriction", () => {
+    const s = shift('2026-10-05', '16:00', '23:00');
+    expect(scoreFor(s, [availability({ status: 'available', start_time: '09:00', end_time: '17:00' })]))
+      .toBe(scoreFor(s, []));
   });
 });
 
@@ -243,6 +253,13 @@ describe('AISolver overnight shifts check the next day', () => {
 
   test('a night shift is blocked when leave starts the next day', () => {
     expect(scoreFor(shift('2026-10-05', '22:00', '08:00'), [], [leave('2026-10-06', '2026-10-08')])).toBe(0);
+  });
+
+  test("a night shift must end inside the next day's partial hours", () => {
+    const partial = (start_time, end_time) => ({ user_id: 'u1', date: '2026-10-06', status: 'partial', start_time, end_time });
+    const night = shift('2026-10-05', '22:00', '08:00');
+    expect(scoreFor(night, [partial('10:00', '18:00')])).toBe(0);
+    expect(scoreFor(night, [partial('00:00', '12:00')])).toBeGreaterThan(0);
   });
 
   test("a day shift ignores the next day's unavailability and leave", () => {
@@ -288,10 +305,10 @@ describe('AISolver dates ignore the server timezone', () => {
   });
 });
 
-describe('AISolver shiftFitsWindow', () => {
-  const solver = makeSolver();
+describe('shiftFitsWindow', () => {
+  const { shiftFitsWindow } = require('../../../utils/availability');
   const fits = (start, end, winStart, winEnd) =>
-    solver.shiftFitsWindow({ start_time: start, end_time: end }, winStart, winEnd);
+    shiftFitsWindow({ start_time: start, end_time: end }, winStart, winEnd);
 
   test('day shift inside and outside a day window', () => {
     expect(fits('09:00', '17:00', '09:00', '17:00')).toBe(true);

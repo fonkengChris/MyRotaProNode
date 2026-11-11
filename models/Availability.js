@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { AVAILABILITY_STATUSES, availabilityStatus } = require('../utils/availability');
 
 const availabilitySchema = new mongoose.Schema({
   user_id: {
@@ -11,19 +12,25 @@ const availabilitySchema = new mongoose.Schema({
     required: [true, 'Date is required'],
     match: [/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format']
   },
+  // available = any time; unavailable = not at all; partial = only start_time–end_time.
+  status: {
+    type: String,
+    enum: { values: AVAILABILITY_STATUSES, message: 'Status must be available, unavailable or partial' }
+  },
+  // Only kept for partial days; cleared otherwise. An end at or before the start runs past midnight.
   start_time: {
     type: String,
-    required: [true, 'Start time is required'],
+    required: [function() { return this.status === 'partial'; }, 'Start time is required for partial availability'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
   },
   end_time: {
     type: String,
-    required: [true, 'End time is required'],
+    required: [function() { return this.status === 'partial'; }, 'End time is required for partial availability'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)']
   },
+  // Derived from status (false only when unavailable); kept for older readers.
   is_available: {
-    type: Boolean,
-    required: [true, 'Availability status is required']
+    type: Boolean
   },
   preferred_shift_type: {
     type: String,
@@ -41,6 +48,7 @@ const availabilitySchema = new mongoose.Schema({
   // if the leave is cancelled (see timeOffService). Never set from the API.
   pre_leave: {
     type: new mongoose.Schema({
+      status: String,
       start_time: String,
       end_time: String,
       is_available: Boolean,
@@ -61,12 +69,24 @@ const availabilitySchema = new mongoose.Schema({
   timestamps: { createdAt: 'submitted_at', updatedAt: 'updated_at' }
 });
 
+// Older clients send only is_available; status wins when both are given.
+availabilitySchema.pre('validate', function() {
+  if (!this.status) this.status = availabilityStatus(this);
+  this.is_available = this.status !== 'unavailable';
+  if (this.status !== 'partial') {
+    this.start_time = undefined;
+    this.end_time = undefined;
+  } else if (this.start_time && this.start_time === this.end_time) {
+    this.invalidate('end_time', 'End time must differ from start time');
+  }
+});
+
 // Compound index for user and date (unique combination)
 availabilitySchema.index({ user_id: 1, date: 1 }, { unique: true });
 
 // Additional indexes for performance
 availabilitySchema.index({ date: 1 });
-availabilitySchema.index({ is_available: 1 });
+availabilitySchema.index({ status: 1 });
 availabilitySchema.index({ preferred_shift_type: 1 });
 
 // Virtual for availability info (excluding sensitive data)
@@ -75,6 +95,7 @@ availabilitySchema.virtual('publicInfo').get(function() {
     id: this._id,
     user_id: this.user_id,
     date: this.date,
+    status: availabilityStatus(this),
     start_time: this.start_time,
     end_time: this.end_time,
     is_available: this.is_available,
@@ -91,52 +112,6 @@ availabilitySchema.methods.prefersShiftType = function(shiftType) {
   }
   
   return this.preferred_shift_type === shiftType;
-};
-
-// Method to check if staff prefers specific time range
-availabilitySchema.methods.prefersTimeRange = function(startTime, endTime) {
-  if (!this.start_time || !this.end_time) {
-    return true; // No time preference
-  }
-  
-  const [prefStartHours, prefStartMinutes] = this.start_time.split(':').map(Number);
-  const [prefEndHours, prefEndMinutes] = this.end_time.split(':').map(Number);
-  const [shiftStartHours, shiftStartMinutes] = startTime.split(':').map(Number);
-  const [shiftEndHours, shiftEndMinutes] = endTime.split(':').map(Number);
-  
-  const prefStartTotal = prefStartHours * 60 + prefStartMinutes;
-  const prefEndTotal = prefEndHours * 60 + prefEndMinutes;
-  const shiftStartTotal = shiftStartHours * 60 + shiftStartMinutes;
-  const shiftEndTotal = shiftEndHours * 60 + shiftEndMinutes;
-  
-  // Handle overnight shifts
-  let adjustedPrefEnd = prefEndTotal;
-  let adjustedShiftEnd = shiftEndTotal;
-  
-  if (prefEndTotal < prefStartTotal) adjustedPrefEnd += 24 * 60;
-  if (shiftEndTotal < shiftStartTotal) adjustedShiftEnd += 24 * 60;
-  
-  // Check if shift time overlaps with preferred time
-  return shiftStartTotal >= prefStartTotal && shiftEndTotal <= adjustedPrefEnd;
-};
-
-// Method to get availability score for AI solver
-availabilitySchema.methods.getAvailabilityScore = function(shiftType, startTime, endTime) {
-  if (!this.is_available) return 0;
-  
-  let score = 100; // Base score
-  
-  // Reduce score if shift type doesn't match preference
-  if (!this.prefersShiftType(shiftType)) {
-    score -= 30;
-  }
-  
-  // Reduce score if time doesn't match preference
-  if (!this.prefersTimeRange(startTime, endTime)) {
-    score -= 20;
-  }
-  
-  return Math.max(score, 0);
 };
 
 // Static method to get availability for multiple users on a date

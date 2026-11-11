@@ -521,7 +521,7 @@ router.delete('/:id', requireRole(['admin', 'key_worker', 'senior_staff']), requ
  * Returns `{ error: { status, body } }` when it is refused, otherwise the review flags:
  * `{ restExceptionPending, capExceptionStatus, capExceptionHours, pendingReasons }`.
  *
- * Admins may override any rule (time-off / >24h day / rest / weekly cap) after confirming;
+ * Admins may override any rule (time-off / unavailability / >24h day / rest / weekly cap) after confirming;
  * the cap approver roles (SolverSettings.manual_assign_cap, default admin) may confirm the
  * weekly cap. Staff selecting a shift for themselves that only breaks the rest rule and/or
  * the weekly cap get it held for them, pending review. Overlap is never overridable.
@@ -552,6 +552,8 @@ async function evaluateAssignment({ shift, userId, currentUser, override, capPol
       switch (check.conflictType) {
         case 'time_off':
           return `Cannot assign staff member to shift on ${check.conflicts[0]?.start_date || 'this date'} - they have approved time off`;
+        case 'unavailable':
+          return `Cannot assign staff member - ${check.message.charAt(0).toLowerCase()}${check.message.slice(1)}`;
         case 'overlapping_shift':
           return `Cannot assign staff member - they already have overlapping shifts on ${check.conflicts[0]?.date || 'this date'}`;
         case 'max_hours_exceeded':
@@ -676,7 +678,7 @@ router.post('/:id/assign', async (req, res) => {
     const currentUser = req.user; // This should be set by the authenticateToken middleware
     const allowedRoles = ['admin', 'key_worker', 'senior_staff'];
     const isSelfAssign = currentUser._id.toString() === String(user_id);
-    // Admins may override any rule (time-off / >24h day / rest / weekly cap) after confirming.
+    // Admins may override any rule (time-off / unavailability / >24h day / rest / weekly cap) after confirming.
     // Approver roles in SolverSettings.manual_assign_cap (default admin only) may also confirm
     // the full-time weekly cap. Overlap is never overridable.
     const { manual_assign_cap: capPolicy } = await SolverSettings.getSettings();

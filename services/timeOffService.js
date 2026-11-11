@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Timetable = require('../models/Timetable');
 const Shift = require('../models/Shift');
 const Availability = require('../models/Availability');
+const { availabilityStatus } = require('../utils/availability');
 const Home = require('../models/Home');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const SolverSettings = require('../models/SolverSettings');
@@ -183,15 +184,13 @@ function buildHomeLeaveLimitMessage(conflict) {
 const APPROVED_LEAVE_NOTE_PREFIX = 'Approved leave: ';
 
 const isLeaveMarker = (record) =>
-  !record.is_available && typeof record.notes === 'string' && record.notes.startsWith(APPROVED_LEAVE_NOTE_PREFIX);
+  availabilityStatus(record) === 'unavailable' && typeof record.notes === 'string' && record.notes.startsWith(APPROVED_LEAVE_NOTE_PREFIX);
 
 async function syncAvailabilityForApprovedLeave(timeOffRequest) {
   const userId = timeOffRequest.user_id;
   const typeLabel = REQUEST_TYPE_LABELS[timeOffRequest.request_type] || timeOffRequest.request_type;
   const marker = {
-    start_time: '00:00',
-    end_time: '23:59',
-    is_available: false,
+    status: 'unavailable',
     preferred_shift_type: 'none',
     notes: `${APPROVED_LEAVE_NOTE_PREFIX}${typeLabel}`
   };
@@ -200,17 +199,13 @@ async function syncAvailabilityForApprovedLeave(timeOffRequest) {
   for (const dateStr of dates) {
     const existing = await Availability.findOne({ user_id: userId, date: dateStr });
     if (!existing) {
-      await Availability.findOneAndUpdate(
-        { user_id: userId, date: dateStr },
-        { user_id: userId, date: dateStr, ...marker },
-        { upsert: true, new: true, runValidators: true }
-      );
+      await Availability.create({ user_id: userId, date: dateStr, ...marker });
       continue;
     }
     // Already marked by other leave: keep whatever it set aside.
     if (!isLeaveMarker(existing)) {
-      const { start_time, end_time, is_available, preferred_shift_type, notes } = existing;
-      existing.pre_leave = { start_time, end_time, is_available, preferred_shift_type, notes };
+      const { start_time, end_time, preferred_shift_type, notes } = existing;
+      existing.pre_leave = { status: availabilityStatus(existing), start_time, end_time, preferred_shift_type, notes };
     }
     existing.set(marker);
     await existing.save({ validateModifiedOnly: true });
@@ -246,7 +241,9 @@ async function releaseAvailabilityForCancelledLeave(timeOffRequest) {
   });
   for (const record of markers) {
     if (record.pre_leave) {
-      record.set(record.pre_leave.toObject());
+      // Entries set aside before `status` existed only carry is_available.
+      const saved = record.pre_leave.toObject();
+      record.set({ ...saved, status: availabilityStatus(saved) });
       record.pre_leave = undefined;
       await record.save({ validateModifiedOnly: true });
     } else {

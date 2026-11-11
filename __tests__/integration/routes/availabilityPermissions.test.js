@@ -75,7 +75,7 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     const updated = await request(app)
       .put(`/api/availability/${id}`)
       .set('Authorization', getAuthHeader(admin._id))
-      .send({ is_available: false });
+      .send({ status: 'unavailable' });
     expect(updated.status).toBe(200);
     expect(updated.body.is_available).toBe(false);
 
@@ -92,7 +92,7 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     const updated = await request(app)
       .put(`/api/availability/${record._id}`)
       .set('Authorization', getAuthHeader(parttime._id))
-      .send({ is_available: false });
+      .send({ status: 'unavailable' });
     expect(updated.status).toBe(200);
 
     const deleted = await request(app)
@@ -107,7 +107,7 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     const updated = await request(app)
       .put(`/api/availability/${record._id}`)
       .set('Authorization', getAuthHeader(fulltime._id))
-      .send({ is_available: false });
+      .send({ status: 'unavailable' });
     expect(updated.status).toBe(403);
 
     const deleted = await request(app)
@@ -123,7 +123,7 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
     const res = await request(app)
       .put(`/api/availability/${record._id}`)
       .set('Authorization', getAuthHeader(parttime._id))
-      .send({ user_id: bank._id.toString(), is_available: false });
+      .send({ user_id: bank._id.toString(), status: 'unavailable' });
     expect(res.status).toBe(200);
     expect(String(res.body.user_id)).toBe(parttime._id.toString());
   });
@@ -207,7 +207,7 @@ describe('Availability on approved leave', () => {
   const approve = (req) => request(app).post(`/api/timeoff/${req._id}/approve`).set('Authorization', auth(admin)).send({});
   const cancel = (req) => request(app).delete(`/api/timeoff/${req._id}`).set('Authorization', auth(admin));
   const own = (date, extra = {}) => ({
-    user_id: parttime._id.toString(), date, start_time: '10:00', end_time: '14:00', is_available: true, preferred_shift_type: 'day', notes: 'Mornings only', ...extra
+    user_id: parttime._id.toString(), date, status: 'partial', start_time: '10:00', end_time: '14:00', preferred_shift_type: 'day', notes: 'Mornings only', ...extra
   });
 
   it('refuses to create, update or delete availability on a day of approved leave, even for admins', async () => {
@@ -220,7 +220,7 @@ describe('Availability on approved leave', () => {
     expect(post.body.code).toBe('AVAILABILITY_ON_LEAVE');
 
     for (const as of [parttime, admin]) {
-      expect((await request(app).put(`/api/availability/${marker._id}`).set('Authorization', auth(as)).send({ is_available: true })).status).toBe(409);
+      expect((await request(app).put(`/api/availability/${marker._id}`).set('Authorization', auth(as)).send({ status: 'available' })).status).toBe(409);
       expect((await request(app).delete(`/api/availability/${marker._id}`).set('Authorization', auth(as))).status).toBe(409);
     }
     const after = await Availability.findById(marker._id);
@@ -252,7 +252,7 @@ describe('Availability on approved leave', () => {
 
     expect((await cancel(req)).status).toBe(200);
     const restored = await Availability.findOne({ user_id: parttime._id, date: '2030-04-01' });
-    expect(restored).toMatchObject({ start_time: '10:00', end_time: '14:00', is_available: true, preferred_shift_type: 'day', notes: 'Mornings only' });
+    expect(restored).toMatchObject({ status: 'partial', start_time: '10:00', end_time: '14:00', is_available: true, preferred_shift_type: 'day', notes: 'Mornings only' });
     expect(restored.pre_leave).toBeUndefined();
     // Days with nothing before the leave are simply freed.
     expect(await Availability.findOne({ user_id: parttime._id, date: '2030-04-02' })).toBeNull();
