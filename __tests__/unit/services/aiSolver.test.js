@@ -220,4 +220,115 @@ describe('AISolver availability preferences', () => {
     const s = shift('2026-10-05', '08:00', '16:00');
     expect(scoreFor(s, [availability({ is_available: false })])).toBe(0);
   });
+
+  test('penalises a shift that starts inside the window but ends after it', () => {
+    const penalty = SolverSettings.DEFAULTS.scoring.outside_available_hours_penalty;
+    const window = [availability({ start_time: '09:00', end_time: '17:00' })];
+    const inside = scoreFor(shift('2026-10-05', '09:00', '17:00'), window);
+    const overruns = scoreFor(shift('2026-10-05', '16:00', '23:00'), window);
+    expect(inside - overruns).toBe(penalty);
+  });
+});
+
+describe('AISolver overnight shifts check the next day', () => {
+  const staffMember = { _id: 'u1', name: 'u1', type: 'parttime', role: 'support_worker', homes: [{ home_id: 'home1', is_default: true }] };
+  const scoreFor = (s, availabilityData, timeOffData = []) =>
+    makeSolver().buildMultiHomeConstraintMatrix([s], [staffMember], availabilityData, timeOffData, ['home1'])['u1'][s._id];
+  const unavailable = (date) => ({ user_id: 'u1', date, start_time: '00:00', end_time: '23:59', is_available: false });
+  const leave = (start_date, end_date) => ({ user_id: 'u1', start_date, end_date, status: 'approved' });
+
+  test('a night shift is blocked when the next day is marked unavailable', () => {
+    expect(scoreFor(shift('2026-10-05', '22:00', '08:00'), [unavailable('2026-10-06')])).toBe(0);
+  });
+
+  test('a night shift is blocked when leave starts the next day', () => {
+    expect(scoreFor(shift('2026-10-05', '22:00', '08:00'), [], [leave('2026-10-06', '2026-10-08')])).toBe(0);
+  });
+
+  test("a day shift ignores the next day's unavailability and leave", () => {
+    const s = shift('2026-10-05', '08:00', '16:00');
+    expect(scoreFor(s, [unavailable('2026-10-06')], [leave('2026-10-06', '2026-10-06')])).toBeGreaterThan(0);
+  });
+
+  test('a Sunday night shift fetches the following Monday', async () => {
+    const Availability = require('../../../models/Availability');
+    const TimeOffRequest = require('../../../models/TimeOffRequest');
+    const av = jest.spyOn(Availability, 'find').mockResolvedValue([]);
+    const to = jest.spyOn(TimeOffRequest, 'find').mockResolvedValue([]);
+    const solver = makeSolver();
+    await solver.getAvailabilityData(['u1'], new Date('2026-10-05'), new Date('2026-10-11'));
+    await solver.getTimeOffData(['u1'], new Date('2026-10-05'), new Date('2026-10-11'));
+    expect(av.mock.calls[0][0].date).toEqual({ $gte: '2026-10-05', $lte: '2026-10-12' });
+    expect(to.mock.calls[0][0].start_date).toEqual({ $lte: '2026-10-12' });
+    jest.restoreAllMocks();
+  });
+});
+
+describe('AISolver dates ignore the server timezone', () => {
+  test('week segments use the requested calendar days', () => {
+    const segs = makeSolver().computeWeekSegments(new Date('2026-07-06'), new Date('2026-07-19'));
+    expect(segs.map((s) => [s.startStr, s.endStr])).toEqual([['2026-07-06', '2026-07-12'], ['2026-07-13', '2026-07-19']]);
+  });
+
+  test('a final partial week ends on the end date', () => {
+    const segs = makeSolver().computeWeekSegments('2026-07-06', '2026-07-15');
+    expect(segs.map((s) => s.endStr)).toEqual(['2026-07-12', '2026-07-15']);
+  });
+
+  test('weekly schedule shifts land on the right weekday', async () => {
+    const WeeklySchedule = require('../../../models/WeeklySchedule');
+    const pattern = { start_time: '08:00', end_time: '16:00', shift_type: 'day', required_staff_count: 1, service_id: 'svc' };
+    const day = (on) => ({ is_active: on, shifts: on ? [pattern] : [] });
+    jest.spyOn(WeeklySchedule, 'findOne').mockResolvedValue({
+      schedule: { monday: day(true), tuesday: day(false), wednesday: day(false), thursday: day(false), friday: day(false), saturday: day(false), sunday: day(false) }
+    });
+    const shifts = await makeSolver().generateShiftsFromWeeklySchedule(new Date('2026-07-06'), new Date('2026-07-12'), 'home1');
+    expect(shifts.map((s) => s.date.toISOString().slice(0, 10))).toEqual(['2026-07-06']);
+    jest.restoreAllMocks();
+  });
+});
+
+describe('AISolver shiftFitsWindow', () => {
+  const solver = makeSolver();
+  const fits = (start, end, winStart, winEnd) =>
+    solver.shiftFitsWindow({ start_time: start, end_time: end }, winStart, winEnd);
+
+  test('day shift inside and outside a day window', () => {
+    expect(fits('09:00', '17:00', '09:00', '17:00')).toBe(true);
+    expect(fits('16:00', '00:00', '09:00', '17:00')).toBe(false);
+    expect(fits('08:00', '12:00', '09:00', '17:00')).toBe(false);
+  });
+
+  test('a window ending 23:59 covers a shift ending at midnight', () => {
+    expect(fits('16:00', '00:00', '09:00', '23:59')).toBe(true);
+  });
+
+  test('overnight shift needs an overnight window', () => {
+    expect(fits('22:00', '08:00', '20:00', '09:00')).toBe(true);
+    expect(fits('22:00', '08:00', '06:00', '23:59')).toBe(false);
+  });
+
+  test('an overnight window covers a shift after midnight', () => {
+    expect(fits('02:00', '06:00', '20:00', '08:00')).toBe(true);
+    expect(fits('07:00', '10:00', '20:00', '08:00')).toBe(false);
+  });
+});
+
+describe('AISolver data fetches fail closed', () => {
+  const Availability = require('../../../models/Availability');
+  const TimeOffRequest = require('../../../models/TimeOffRequest');
+  const start = new Date('2026-10-05');
+  const end = new Date('2026-10-11');
+
+  afterEach(() => jest.restoreAllMocks());
+
+  test('a failed availability fetch throws rather than returning no records', async () => {
+    jest.spyOn(Availability, 'find').mockRejectedValue(new Error('db down'));
+    await expect(makeSolver().getAvailabilityData(['u1'], start, end)).rejects.toThrow('db down');
+  });
+
+  test('a failed time-off fetch throws rather than returning no leave', async () => {
+    jest.spyOn(TimeOffRequest, 'find').mockRejectedValue(new Error('db down'));
+    await expect(makeSolver().getTimeOffData(['u1'], start, end)).rejects.toThrow('db down');
+  });
 });

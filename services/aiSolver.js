@@ -19,12 +19,34 @@ const PRIORITY_TIERS = {
   bank: [25, 25, 10, 5]
 };
 
+// Dates: the solver works in calendar days (YYYY-MM-DD). Date objects are UTC midnight of that
+// day and are only ever read or stepped in UTC, so the server's timezone never shifts a day.
+
+/** YYYY-MM-DD for a Date (its UTC day) or a date string (its leading date, ignoring any time/offset). */
+function toYmd(value) {
+  if (value == null) return '';
+  if (value instanceof Date) return value.toISOString().split('T')[0];
+  const s = String(value);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
+/** UTC midnight Date for YYYY-MM-DD. */
+function ymdToDate(ymd) {
+  return new Date(`${ymd}T00:00:00Z`);
+}
+
 /** YYYY-MM-DD for a Date or date string (shift.date). */
 function shiftDateYmd(shift) {
   if (!shift || shift.date == null) return '';
-  if (shift.date instanceof Date) return shift.date.toISOString().split('T')[0];
-  const s = String(shift.date);
-  return s.length >= 10 ? s.slice(0, 10) : s;
+  return toYmd(shift.date);
+}
+
+/** Whether a shift finishes on the day after it starts. */
+function endsNextDay(shift) {
+  if (!shift.start_time || !shift.end_time) return false;
+  const [sh, sm] = shift.start_time.split(':').map(Number);
+  const [eh, em] = shift.end_time.split(':').map(Number);
+  return eh * 60 + em <= sh * 60 + sm;
 }
 
 /** YYYY-MM-DD shifted by `days` (calendar arithmetic, timezone-independent). */
@@ -88,24 +110,15 @@ class AISolver {
    */
   computeWeekSegments(startDate, endDate) {
     const segments = [];
-    const cur = new Date(startDate);
-    cur.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(0, 0, 0, 0);
-    while (cur <= end) {
-      const ws = new Date(cur);
-      const we = new Date(cur);
-      we.setDate(we.getDate() + 6);
-      if (we > end) {
-        we.setTime(end.getTime());
-      }
+    const end = toYmd(endDate);
+    for (let cur = toYmd(startDate); cur <= end; cur = addDaysYmd(cur, 7)) {
+      const weekEnd = addDaysYmd(cur, 6) < end ? addDaysYmd(cur, 6) : end;
       segments.push({
-        weekStart: new Date(ws),
-        weekEnd: new Date(we),
-        startStr: ws.toISOString().split('T')[0],
-        endStr: we.toISOString().split('T')[0]
+        weekStart: ymdToDate(cur),
+        weekEnd: ymdToDate(weekEnd),
+        startStr: cur,
+        endStr: weekEnd
       });
-      cur.setDate(cur.getDate() + 7);
     }
     return segments;
   }
@@ -170,9 +183,9 @@ class AISolver {
       await this.initialize();
       const allowedRoleList = options.allowedRoles || this.settings.auto_assignable_roles;
       const allowedRoles = new Set(allowedRoleList);
-      // Convert string dates to Date objects if needed
-      const startDate = typeof weekStartDate === 'string' ? new Date(weekStartDate) : weekStartDate;
-      const endDate = typeof weekEndDate === 'string' ? new Date(weekEndDate) : weekEndDate;
+      // Normalise to UTC midnight of the requested calendar days (see toYmd).
+      const startDate = ymdToDate(toYmd(weekStartDate));
+      const endDate = ymdToDate(toYmd(weekEndDate));
       
       // Ensure homeIds is always an array
       const homeIdArray = Array.isArray(homeIds) ? homeIds : [homeIds];
@@ -240,8 +253,8 @@ class AISolver {
         shifts = await Shift.find({
           home_id: { $in: allHomeIdObjs },
           date: {
-            $gte: startDate.toISOString().split('T')[0],
-            $lte: endDate.toISOString().split('T')[0]
+            $gte: toYmd(startDate),
+            $lte: toYmd(endDate)
           }
         }).populate('service_id', 'name');
 
@@ -257,8 +270,8 @@ class AISolver {
         shifts = await Shift.find({
           home_id: { $in: allHomeIdObjs },
           date: {
-            $gte: startDate.toISOString().split('T')[0],
-            $lte: endDate.toISOString().split('T')[0]
+            $gte: toYmd(startDate),
+            $lte: toYmd(endDate)
           }
         }).populate('service_id', 'name');
 
@@ -407,22 +420,14 @@ class AISolver {
   }
 
   // Get availability data for staff
+  // Errors propagate: a missing record means "available", so swallowing a failed fetch would
+  // let the solver roster staff who marked themselves unavailable.
+  // Runs a day past endDate: an overnight shift on the last day also checks the morning after.
   async getAvailabilityData(staffIds, startDate, endDate) {
-    try {
-      // Convert Date objects to string format to match stored availability records
-      const startDateStr = startDate.toISOString().split('T')[0];
-      const endDateStr = endDate.toISOString().split('T')[0];
-      
-      const availability = await Availability.find({
-        user_id: { $in: staffIds },
-        date: { $gte: startDateStr, $lte: endDateStr }
-      });
-      
-      return availability;
-    } catch (error) {
-      console.error('Error fetching availability data:', error);
-      return [];
-    }
+    return Availability.find({
+      user_id: { $in: staffIds },
+      date: { $gte: toYmd(startDate), $lte: addDaysYmd(toYmd(endDate), 1) }
+    });
   }
 
   /**
@@ -431,8 +436,8 @@ class AISolver {
    * Returns { [userId]: Set<YYYY-MM-DD> }.
    */
   async getExternalWorkDates(staffIds, startDate, endDate) {
-    const startStr = startDate.toISOString().split('T')[0];
-    const endStr = endDate.toISOString().split('T')[0];
+    const startStr = toYmd(startDate);
+    const endStr = toYmd(endDate);
     const span = this.settings.max_consecutive_days;
     const idSet = new Set(staffIds.map((id) => id.toString()));
     const result = {};
@@ -456,24 +461,15 @@ class AISolver {
   }
 
   // Get time off data for staff
+  // Errors propagate for the same reason as getAvailabilityData: an empty list would mean
+  // nobody is on leave. Also runs a day past endDate, like getAvailabilityData.
   async getTimeOffData(staffIds, startDate, endDate) {
-    try {
-      // Convert Date objects to string format for comparison
-      const startDateStr = startDate instanceof Date ? startDate.toISOString().split('T')[0] : startDate;
-      const endDateStr = endDate instanceof Date ? endDate.toISOString().split('T')[0] : endDate;
-      
-      const timeOff = await TimeOffRequest.find({
-        user_id: { $in: staffIds },
-        status: 'approved',
-        start_date: { $lte: endDateStr },
-        end_date: { $gte: startDateStr }
-      });
-      
-      return timeOff;
-    } catch (error) {
-      console.error('Error fetching time off data:', error);
-      return [];
-    }
+    return TimeOffRequest.find({
+      user_id: { $in: staffIds },
+      status: 'approved',
+      start_date: { $lte: addDaysYmd(toYmd(endDate), 1) },
+      end_date: { $gte: toYmd(startDate) }
+    });
   }
 
   // Generate shifts based on the home's weekly schedule
@@ -490,13 +486,14 @@ class AISolver {
       }
       
       const shifts = [];
-      const currentDate = new Date(startDate);
+      const currentDate = ymdToDate(toYmd(startDate));
+      const lastDate = ymdToDate(toYmd(endDate));
       
       // Day names for mapping
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       
-      while (currentDate <= new Date(endDate)) {
-        const dayName = dayNames[currentDate.getDay()];
+      while (currentDate <= lastDate) {
+        const dayName = dayNames[currentDate.getUTCDay()];
         const daySchedule = weeklySchedule.schedule[dayName];
         
         if (daySchedule && daySchedule.is_active && daySchedule.shifts && daySchedule.shifts.length > 0) {
@@ -504,7 +501,7 @@ class AISolver {
             // Only create shifts for the specified service if serviceId is provided
             if (!serviceId || shiftPattern.service_id.toString() === serviceId.toString()) {
               const shift = {
-                _id: `generated-${currentDate.toISOString().split('T')[0]}-${shiftPattern.start_time.replace(':', '-')}`,
+                _id: `generated-${toYmd(currentDate)}-${shiftPattern.start_time.replace(':', '-')}`,
                 date: new Date(currentDate),
                 start_time: shiftPattern.start_time,
                 end_time: shiftPattern.end_time,
@@ -518,7 +515,7 @@ class AISolver {
           });
         }
         
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
       }
       
       if (shifts.length === 0) {
@@ -559,10 +556,7 @@ class AISolver {
         typeof rawHomeId === 'string' ? new mongoose.Types.ObjectId(rawHomeId) : rawHomeId;
 
       for (const generatedShift of generatedShifts) {
-        const dateStr =
-          generatedShift.date instanceof Date
-            ? generatedShift.date.toISOString().split('T')[0]
-            : String(generatedShift.date).slice(0, 10);
+        const dateStr = toYmd(generatedShift.date);
 
         const serviceObjectId =
           generatedShift.service_id && typeof generatedShift.service_id === 'string'
@@ -716,15 +710,7 @@ class AISolver {
       constraints[staffMember._id] = {};
       
       shifts.forEach(shift => {
-        // Handle both Date objects and string dates
-        let shiftDate;
-        if (shift.date instanceof Date) {
-          shiftDate = shift.date.toISOString().split('T')[0];
-        } else if (typeof shift.date === 'string') {
-          shiftDate = shift.date;
-        } else {
-          shiftDate = 'unknown';
-        }
+        const shiftDate = shiftDateYmd(shift) || 'unknown';
 
         const shiftKey = shift._id || shift.id || `${shiftDate}-${shift.start_time}`;
         
@@ -760,25 +746,30 @@ class AISolver {
         }
         
         // Check availability
-        const availability = availabilityData.find(av => 
-          av.user_id.toString() === staffMember._id.toString() && 
-          av.date === shiftDate
+        const memberId = staffMember._id.toString();
+        const availabilityOn = (date) => availabilityData.find(av =>
+          av.user_id.toString() === memberId && av.date === date
         );
-        
+        const availability = availabilityOn(shiftDate);
+
         // Check time off
-        const timeOff = timeOffData.find(to => 
-          to.user_id.toString() === staffMember._id.toString() && 
-          to.start_date <= shiftDate && 
-          to.end_date >= shiftDate &&
+        const onLeave = (date) => timeOffData.some(to =>
+          to.user_id.toString() === memberId &&
+          to.start_date <= date &&
+          to.end_date >= date &&
           to.status === 'approved'
         );
-        
+
+        // A shift past midnight also needs the person on the following day.
+        const nextDate = shiftDate !== 'unknown' && endsNextDay(shift) ? addDaysYmd(shiftDate, 1) : null;
+        const nextAvailability = nextDate && availabilityOn(nextDate);
+
         // Calculate constraint score
         let score = 100; // Base score - assume available by default
         
-        if (timeOff) {
+        if (onLeave(shiftDate) || (nextDate && onLeave(nextDate))) {
           score = 0; // Time off approved
-        } else if (availability && !availability.is_available) {
+        } else if ((availability && !availability.is_available) || (nextAvailability && !nextAvailability.is_available)) {
           score = 0; // Explicitly marked as unavailable
         } else {
           // Staff is available (either no record exists or explicitly marked as available)
@@ -791,7 +782,7 @@ class AISolver {
           
           if (availability && availability.start_time && 
               availability.end_time &&
-              !this.isTimeInRange(shift.start_time, availability.start_time, availability.end_time)) {
+              !this.shiftFitsWindow(shift, availability.start_time, availability.end_time)) {
             score -= scoring.outside_available_hours_penalty;
           }
           
@@ -1262,18 +1253,21 @@ class AISolver {
     return totalPenalty;
   }
 
-  // Helper method to check if a time is within a range
-  isTimeInRange(time, startTime, endTime) {
-    const timeMinutes = this.timeToMinutes(time);
-    const startMinutes = this.timeToMinutes(startTime);
-    const endMinutes = this.timeToMinutes(endTime);
-    
-    if (endMinutes < startMinutes) {
-      // Overnight shift
-      return timeMinutes >= startMinutes || timeMinutes <= endMinutes;
-    } else {
-      return timeMinutes >= startMinutes && timeMinutes <= endMinutes;
-    }
+  // Whether the whole shift (start to end, not just its start) sits inside the availability
+  // window. Either may run past midnight; a window ending 23:59 counts as running to midnight.
+  shiftFitsWindow(shift, windowStart, windowEnd) {
+    const DAY = 24 * 60;
+    const shiftStart = this.timeToMinutes(shift.start_time);
+    let shiftEnd = this.timeToMinutes(shift.end_time);
+    if (shiftEnd <= shiftStart) shiftEnd += DAY;
+    const winStart = this.timeToMinutes(windowStart);
+    let winEnd = this.timeToMinutes(windowEnd);
+    if (winEnd === DAY - 1) winEnd = DAY;
+    if (winEnd <= winStart) winEnd += DAY;
+    // An overnight window also covers a shift starting after midnight (e.g. 20:00-08:00 holds 02:00-06:00).
+    return [0, DAY].some(offset =>
+      shiftStart + offset >= winStart && shiftEnd + offset <= winEnd
+    );
   }
   
   // Helper method to convert time string to minutes

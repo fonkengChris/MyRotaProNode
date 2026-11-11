@@ -177,38 +177,51 @@ function buildHomeLeaveLimitMessage(conflict) {
 }
 
 /**
- * Upsert daily availability as unavailable for each day of approved leave.
+ * Marks each day of approved leave unavailable. A day the person had already filled in keeps
+ * their entry in `pre_leave` so cancelling the leave can put it back.
  */
 const APPROVED_LEAVE_NOTE_PREFIX = 'Approved leave: ';
+
+const isLeaveMarker = (record) =>
+  !record.is_available && typeof record.notes === 'string' && record.notes.startsWith(APPROVED_LEAVE_NOTE_PREFIX);
 
 async function syncAvailabilityForApprovedLeave(timeOffRequest) {
   const userId = timeOffRequest.user_id;
   const typeLabel = REQUEST_TYPE_LABELS[timeOffRequest.request_type] || timeOffRequest.request_type;
-  const note = `${APPROVED_LEAVE_NOTE_PREFIX}${typeLabel}`;
+  const marker = {
+    start_time: '00:00',
+    end_time: '23:59',
+    is_available: false,
+    preferred_shift_type: 'none',
+    notes: `${APPROVED_LEAVE_NOTE_PREFIX}${typeLabel}`
+  };
   const dates = eachDateInRange(timeOffRequest.start_date, timeOffRequest.end_date);
 
   for (const dateStr of dates) {
-    await Availability.findOneAndUpdate(
-      { user_id: userId, date: dateStr },
-      {
-        user_id: userId,
-        date: dateStr,
-        start_time: '00:00',
-        end_time: '23:59',
-        is_available: false,
-        preferred_shift_type: 'none',
-        notes: note
-      },
-      { upsert: true, new: true, runValidators: true }
-    );
+    const existing = await Availability.findOne({ user_id: userId, date: dateStr });
+    if (!existing) {
+      await Availability.findOneAndUpdate(
+        { user_id: userId, date: dateStr },
+        { user_id: userId, date: dateStr, ...marker },
+        { upsert: true, new: true, runValidators: true }
+      );
+      continue;
+    }
+    // Already marked by other leave: keep whatever it set aside.
+    if (!isLeaveMarker(existing)) {
+      const { start_time, end_time, is_available, preferred_shift_type, notes } = existing;
+      existing.pre_leave = { start_time, end_time, is_available, preferred_shift_type, notes };
+    }
+    existing.set(marker);
+    await existing.save({ validateModifiedOnly: true });
   }
 }
 
 /**
- * Undoes syncAvailabilityForApprovedLeave when approved leave is cancelled: removes the
- * "Approved leave" unavailable entries so those days are free again. Days still covered
- * by the user's other approved leave, and entries changed since (no longer the leave
- * marker), are left alone.
+ * Undoes syncAvailabilityForApprovedLeave when approved leave is cancelled: restores the
+ * person's own entry where one was set aside, otherwise removes the "Approved leave" entry so
+ * the day is free again. Days still covered by the user's other approved leave, and entries
+ * changed since (no longer the leave marker), are left alone.
  */
 async function releaseAvailabilityForCancelledLeave(timeOffRequest) {
   const userId = timeOffRequest.user_id;
@@ -225,12 +238,21 @@ async function releaseAvailabilityForCancelledLeave(timeOffRequest) {
     .filter((d) => !stillOnLeave.has(d));
   if (!dates.length) return;
 
-  await Availability.deleteMany({
+  const markers = await Availability.find({
     user_id: userId,
     date: { $in: dates },
     is_available: false,
     notes: { $regex: `^${APPROVED_LEAVE_NOTE_PREFIX}` }
   });
+  for (const record of markers) {
+    if (record.pre_leave) {
+      record.set(record.pre_leave.toObject());
+      record.pre_leave = undefined;
+      await record.save({ validateModifiedOnly: true });
+    } else {
+      await record.deleteOne();
+    }
+  }
 }
 
 module.exports = {

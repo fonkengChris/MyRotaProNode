@@ -37,6 +37,18 @@ const availabilitySchema = new mongoose.Schema({
     type: String,
     maxlength: [500, 'Notes cannot exceed 500 characters']
   },
+  // The person's own entry for this day, set aside while approved leave covers it and put back
+  // if the leave is cancelled (see timeOffService). Never set from the API.
+  pre_leave: {
+    type: new mongoose.Schema({
+      start_time: String,
+      end_time: String,
+      is_available: Boolean,
+      preferred_shift_type: String,
+      notes: String
+    }, { _id: false }),
+    default: undefined
+  },
   submitted_at: {
     type: Date,
     default: Date.now

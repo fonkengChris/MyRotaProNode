@@ -7,6 +7,7 @@ const request = require('supertest');
 const app = require('../../../server');
 const Availability = require('../../../models/Availability');
 const KeyWorkerAccessSettings = require('../../../models/KeyWorkerAccessSettings');
+const TimeOffRequest = require('../../../models/TimeOffRequest');
 const { createTestUser, createTestHome, getAuthHeader } = require('../../../tests/utils/testHelpers');
 
 let seq = 0;
@@ -125,6 +126,152 @@ describe('Availability permissions (part-time/bank self-declare, admin manages e
       .send({ user_id: bank._id.toString(), is_available: false });
     expect(res.status).toBe(200);
     expect(String(res.body.user_id)).toBe(parttime._id.toString());
+  });
+});
+
+describe('Availability read scope', () => {
+  let admin, keyWorker, parttime, bank, otherHomeStaff;
+
+  beforeEach(async () => {
+    const home = await createTestHome();
+    const otherHome = await createTestHome();
+    admin = await createTestUser({ role: 'admin', email: email('admin') });
+    keyWorker = await createTestUser({ role: 'key_worker', email: email('kw'), homes: [{ home_id: home._id }] });
+    parttime = await createTestUser({ type: 'parttime', email: email('pt'), homes: [{ home_id: home._id }] });
+    bank = await createTestUser({ type: 'bank', email: email('bank'), homes: [{ home_id: home._id }] });
+    otherHomeStaff = await createTestUser({ type: 'parttime', email: email('oh'), homes: [{ home_id: otherHome._id }] });
+    for (const u of [admin, parttime, bank, otherHomeStaff]) {
+      await Availability.create({ user_id: u._id, date: '2030-03-04', start_time: '09:00', end_time: '17:00', is_available: true });
+    }
+  });
+
+  const get = (as, path, query = {}) =>
+    request(app).get(`/api/availability${path}`).query(query).set('Authorization', getAuthHeader(as._id));
+  const owners = (res) => res.body.map((a) => String(a.user_id._id || a.user_id)).sort();
+
+  it('shows staff only their own records when listing without a user filter', async () => {
+    const res = await get(parttime, '');
+    expect(res.status).toBe(200);
+    expect(owners(res)).toEqual([parttime._id.toString()]);
+  });
+
+  it("stops staff reading someone else's availability", async () => {
+    expect((await get(parttime, '', { user_id: bank._id.toString() })).status).toBe(403);
+    expect((await get(parttime, `/user/${bank._id}`)).status).toBe(403);
+    const record = await Availability.findOne({ user_id: bank._id });
+    expect((await get(parttime, `/${record._id}`)).status).toBe(404);
+  });
+
+  it('lets an admin list everyone', async () => {
+    const res = await get(admin, '');
+    expect(res.body).toHaveLength(4);
+  });
+
+  it('lets a key worker with all-home scope see every non-admin', async () => {
+    const res = await get(keyWorker, '');
+    expect(owners(res)).toEqual([parttime, bank, otherHomeStaff].map((u) => u._id.toString()).sort());
+  });
+
+  it("limits a key worker with own-home scope to their homes' staff", async () => {
+    await KeyWorkerAccessSettings.create({ home_scope: 'own' });
+    const res = await get(keyWorker, '');
+    expect(owners(res)).toEqual([parttime, bank].map((u) => u._id.toString()).sort());
+    expect((await get(keyWorker, `/user/${otherHomeStaff._id}`)).status).toBe(403);
+  });
+
+  it('lets a key worker with view-only staff access read staff availability', async () => {
+    await KeyWorkerAccessSettings.create({ staff: 'view' });
+    expect((await get(keyWorker, '', { user_id: parttime._id.toString() })).status).toBe(200);
+  });
+
+  it('hides staff availability from key workers whose staff access is hidden', async () => {
+    await KeyWorkerAccessSettings.create({ staff: 'hidden' });
+    expect((await get(keyWorker, '', { user_id: parttime._id.toString() })).status).toBe(403);
+    expect((await get(keyWorker, '')).body).toHaveLength(0);
+  });
+});
+
+describe('Availability on approved leave', () => {
+  let admin, parttime;
+  const auth = (u) => getAuthHeader(u._id);
+
+  beforeEach(async () => {
+    const home = await createTestHome();
+    admin = await createTestUser({ role: 'admin', email: email('admin') });
+    parttime = await createTestUser({ type: 'parttime', email: email('pt'), homes: [{ home_id: home._id }] });
+  });
+
+  const leave = (status, start_date = '2030-04-01', end_date = '2030-04-03') => TimeOffRequest.create({
+    user_id: parttime._id, start_date, end_date, reason: 'Holiday', request_type: 'annual_leave', status
+  });
+  const approve = (req) => request(app).post(`/api/timeoff/${req._id}/approve`).set('Authorization', auth(admin)).send({});
+  const cancel = (req) => request(app).delete(`/api/timeoff/${req._id}`).set('Authorization', auth(admin));
+  const own = (date, extra = {}) => ({
+    user_id: parttime._id.toString(), date, start_time: '10:00', end_time: '14:00', is_available: true, preferred_shift_type: 'day', notes: 'Mornings only', ...extra
+  });
+
+  it('refuses to create, update or delete availability on a day of approved leave, even for admins', async () => {
+    const req = await leave('pending');
+    expect((await approve(req)).status).toBe(200);
+    const marker = await Availability.findOne({ user_id: parttime._id, date: '2030-04-02' });
+
+    const post = await request(app).post('/api/availability').set('Authorization', auth(parttime)).send(own('2030-04-02'));
+    expect(post.status).toBe(409);
+    expect(post.body.code).toBe('AVAILABILITY_ON_LEAVE');
+
+    for (const as of [parttime, admin]) {
+      expect((await request(app).put(`/api/availability/${marker._id}`).set('Authorization', auth(as)).send({ is_available: true })).status).toBe(409);
+      expect((await request(app).delete(`/api/availability/${marker._id}`).set('Authorization', auth(as))).status).toBe(409);
+    }
+    const after = await Availability.findById(marker._id);
+    expect(after.is_available).toBe(false);
+  });
+
+  it('refuses to move a record onto a day of approved leave', async () => {
+    await leave('approved');
+    const record = await Availability.create(own('2030-04-10'));
+    const res = await request(app).put(`/api/availability/${record._id}`).set('Authorization', auth(parttime)).send({ date: '2030-04-02' });
+    expect(res.status).toBe(409);
+  });
+
+  it('ignores pre_leave sent by a client', async () => {
+    const res = await request(app).post('/api/availability').set('Authorization', auth(parttime))
+      .send({ ...own('2030-04-20'), pre_leave: { is_available: true, notes: 'sneaky' } });
+    expect(res.status).toBe(201);
+    expect((await Availability.findById(res.body._id)).pre_leave).toBeUndefined();
+  });
+
+  it("puts the person's own entry back when approved leave is cancelled", async () => {
+    await Availability.create(own('2030-04-01'));
+    const req = await leave('pending');
+    await approve(req);
+
+    const during = await Availability.findOne({ user_id: parttime._id, date: '2030-04-01' });
+    expect(during.is_available).toBe(false);
+    expect(during.notes).toMatch(/^Approved leave: /);
+
+    expect((await cancel(req)).status).toBe(200);
+    const restored = await Availability.findOne({ user_id: parttime._id, date: '2030-04-01' });
+    expect(restored).toMatchObject({ start_time: '10:00', end_time: '14:00', is_available: true, preferred_shift_type: 'day', notes: 'Mornings only' });
+    expect(restored.pre_leave).toBeUndefined();
+    // Days with nothing before the leave are simply freed.
+    expect(await Availability.findOne({ user_id: parttime._id, date: '2030-04-02' })).toBeNull();
+  });
+
+  it('keeps the original entry through overlapping leave and restores it when the last is cancelled', async () => {
+    await Availability.create(own('2030-04-02'));
+    const first = await leave('pending', '2030-04-01', '2030-04-03');
+    await approve(first);
+    const second = await leave('pending', '2030-04-02', '2030-04-02');
+    await approve(second);
+
+    await cancel(first);
+    const stillLeave = await Availability.findOne({ user_id: parttime._id, date: '2030-04-02' });
+    expect(stillLeave.is_available).toBe(false);
+
+    await cancel(second);
+    const restored = await Availability.findOne({ user_id: parttime._id, date: '2030-04-02' });
+    expect(restored).toMatchObject({ is_available: true, notes: 'Mornings only' });
   });
 });
 
