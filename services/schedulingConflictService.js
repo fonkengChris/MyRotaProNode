@@ -4,7 +4,7 @@ const { availabilityConflict } = require('../utils/availability');
 const Shift = require('../models/Shift');
 const User = require('../models/User');
 const SolverSettings = require('../models/SolverSettings');
-const { restHoursBetween, capHoursAfterBreak, computeBreakDeduction } = require('../utils/shiftHours');
+const { restHoursBetween, minRestHoursBetween, capHoursAfterBreak, computeBreakDeduction } = require('../utils/shiftHours');
 const Home = require('../models/Home');
 const {
   isOneToOne,
@@ -15,7 +15,8 @@ const {
 
 // Default minimum rest gap (hours) between two of a staff member's shifts. The live value is
 // SolverSettings.min_rest_hours (admin-editable). Below it an admin may override, and a support
-// worker self-selecting is assigned but flagged for review.
+// worker self-selecting is assigned but flagged for review. Between two community outreach shifts
+// the shorter SolverSettings.outreach_min_rest_hours applies instead.
 const MIN_REST_HOURS = SolverSettings.DEFAULTS.min_rest_hours;
 
 // Conflict types an admin may override at assignment time. `overlapping_shift` is deliberately
@@ -232,20 +233,27 @@ class SchedulingConflictService {
 
       // Org-wide rules: minimum rest and the full-time weekly cap.
       const solverSettings = await SolverSettings.getSettings();
-      const minRestHours = solverSettings.min_rest_hours;
+      const outreachHomeIds = await Home.getOutreachHomeIds();
 
-      // Fewer than minRestHours between this shift and an adjacent-day shift.
+      // Less than the required rest between this shift and an adjacent-day shift. The
+      // requirement depends on the pair (shorter between two outreach shifts), so the
+      // reported gap is the one that falls furthest short.
       const nearbyShifts = await Shift.find({
         date: { $in: this._restWindowDates(shiftDate) },
         'assigned_staff.user_id': userId,
         ...excludeFilter
-      }).select('date start_time end_time');
+      }).select('date start_time end_time home_id');
       let minRest = Infinity;
+      let minRestHours = solverSettings.min_rest_hours;
       for (const s of nearbyShifts) {
         const rest = restHoursBetween(s, candidate);
-        if (rest === null) continue;
         // Ignore overlaps (rest <= 0): those are handled by the overlap check above.
-        if (rest > 0 && rest < minRest) minRest = rest;
+        if (rest === null || rest <= 0) continue;
+        const required = minRestHoursBetween(s, candidate, solverSettings, outreachHomeIds);
+        if (rest < required && (minRest === Infinity || required - rest > minRestHours - minRest)) {
+          minRest = rest;
+          minRestHours = required;
+        }
       }
       if (minRest < minRestHours) {
         overridableConflicts.push({

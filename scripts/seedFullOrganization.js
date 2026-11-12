@@ -469,6 +469,7 @@ async function seed() {
       contact_info: { phone: def.phone, email: def.email },
       capacity: def.capacity,
       operating_hours: def.operating_hours,
+      service_type: def.type,
       is_active: true,
     });
     homeByKey[def.key] = home;

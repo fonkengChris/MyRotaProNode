@@ -211,6 +211,19 @@ function restHoursBetween(shiftA, shiftB) {
   return (later.start - earlier.end) / 3600000;
 }
 
+/**
+ * Minimum rest (hours) required between two shifts. When both are at community outreach homes
+ * (`outreachHomeIds`, a Set of home id strings) the shorter `outreach_min_rest_hours` applies;
+ * otherwise `min_rest_hours`. A shift without a home_id counts as non-outreach.
+ */
+function minRestHoursBetween(shiftA, shiftB, settings, outreachHomeIds) {
+  const isOutreach = (s) => Boolean(s && s.home_id && outreachHomeIds && outreachHomeIds.has(String(s.home_id)));
+  if (isOutreach(shiftA) && isOutreach(shiftB) && settings.outreach_min_rest_hours != null) {
+    return settings.outreach_min_rest_hours;
+  }
+  return settings.min_rest_hours;
+}
+
 // Fallback break-deduction bands, used when a home has no configured policy (e.g.
 // documents created before break_policy existed). Mirrors the historical hard-coded rule.
 const DEFAULT_BREAK_TIERS = [
@@ -317,6 +330,7 @@ module.exports = {
   durationFromTimes,
   nightSleepHours,
   restHoursBetween,
+  minRestHoursBetween,
   getShiftHourBreakdown,
   DEFAULT_BREAK_TIERS,
   computeBreakDeduction,

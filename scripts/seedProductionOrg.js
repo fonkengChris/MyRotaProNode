@@ -708,6 +708,7 @@ async function seed() {
       contact_info: { phone: def.phone, email: contactEmail(def) },
       capacity: def.capacity,
       operating_hours: def.operating_hours,
+      service_type: def.type === 'outreach' ? 'community_outreach' : 'supported_living',
       is_active: true,
     });
     homeByKey[def.key] = home;

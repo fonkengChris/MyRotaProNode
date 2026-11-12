@@ -3,7 +3,7 @@ const User = require('../models/User');
 const Shift = require('../models/Shift');
 const Availability = require('../models/Availability');
 const TimeOffRequest = require('../models/TimeOffRequest');
-const { paidHoursAfterBreak, capHoursAfterBreak, computeBreakDeduction, restHoursBetween } = require('../utils/shiftHours');
+const { paidHoursAfterBreak, capHoursAfterBreak, computeBreakDeduction, restHoursBetween, minRestHoursBetween } = require('../utils/shiftHours');
 const Home = require('../models/Home');
 
 // Default roles the AI solver auto-assigns. Admins configure the live list in
@@ -84,6 +84,8 @@ class AISolver {
     this.settings = null;
     // home_id -> Home.break_policy, so weekly hours are counted after unpaid breaks
     this.breakPolicyByHome = new Map();
+    // ids of community outreach homes, whose back-to-back shifts need less rest
+    this.outreachHomeIds = new Set();
   }
 
   /** Paid hours a shift counts towards weekly limits (after the home's break deduction). */
@@ -103,6 +105,12 @@ class AISolver {
       this.breakPolicyByHome = new Map(homes.map((h) => [String(h._id), h.break_policy]));
     } catch (error) {
       console.error('AI Solver: could not load home break policies, using defaults:', error.message);
+    }
+    try {
+      // Org-wide, since a staff member's other shifts may be at homes outside this solve.
+      this.outreachHomeIds = await Home.getOutreachHomeIds();
+    } catch (error) {
+      console.error('AI Solver: could not load outreach homes, using the normal rest rule:', error.message);
     }
   }
 
@@ -1255,18 +1263,19 @@ class AISolver {
   }
 
   /**
-   * Whether `candidate` overlaps, or leaves less than min_rest_hours between it and, any of
-   * `otherShifts`. Uses real start/end instants, so overnight shifts and shifts on either
-   * side of the candidate are handled. 1-to-1 shifts may sit on top of background shifts.
+   * Whether `candidate` overlaps, or leaves less than the minimum rest between it and, any of
+   * `otherShifts` (min_rest_hours, or outreach_min_rest_hours when both are outreach shifts).
+   * Uses real start/end instants, so overnight shifts and shifts on either side of the
+   * candidate are handled. 1-to-1 shifts may sit on top of background shifts.
    */
   violatesRestOrOverlap(candidate, otherShifts) {
-    const minRest = this.settings.min_rest_hours;
     const candidateKey = shiftKeyOf(candidate);
     const shape = (s) => ({ date: shiftDateYmd(s), start_time: s.start_time, end_time: s.end_time });
     const candidateShape = shape(candidate);
     for (const other of otherShifts) {
       if (shiftKeyOf(other) === candidateKey || isOneToOne(other)) continue;
       const rest = restHoursBetween(shape(other), candidateShape);
+      const minRest = minRestHoursBetween(other, candidate, this.settings, this.outreachHomeIds);
       // Negative rest = the shifts overlap.
       if (rest !== null && rest < minRest) return true;
     }
@@ -1429,7 +1438,7 @@ class AISolver {
       'assigned_staff.user_id': staffId.toString(),
       _id: { $ne: currentShift._id },
       date: { $gte: addDaysYmd(currentDate, -2), $lte: addDaysYmd(currentDate, 2) }
-    }).select('date start_time end_time shift_type');
+    }).select('date start_time end_time shift_type home_id');
     return this.violatesRestOrOverlap(currentShift, nearbyShifts);
   }
 

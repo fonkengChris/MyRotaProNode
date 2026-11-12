@@ -24,6 +24,9 @@ const EMPLOYMENT_TYPES = ['fulltime', 'parttime', 'bank'];
 const DEFAULTS = {
   auto_assignable_roles: ['support_worker'],
   min_rest_hours: 8,
+  // Rest between two shifts that are both at community outreach homes (Home.service_type).
+  // Outreach shifts are short visiting rounds, so 30 minutes is enough between them.
+  outreach_min_rest_hours: 0.5,
   consecutive_days_enabled: true,
   max_consecutive_days: 6,
   // Rotation: the most days in a row one person works the same shift (same type and times).
@@ -106,6 +109,8 @@ const solverSettingsSchema = new mongoose.Schema({
     validate: { validator: (v) => Array.isArray(v) && v.length > 0, message: 'At least one auto-assignable role is required' }
   },
   min_rest_hours: num(0, 24),
+  // Defaulted so settings documents saved before this field existed pick it up on load.
+  outreach_min_rest_hours: { ...num(0, 24), default: DEFAULTS.outreach_min_rest_hours },
   consecutive_days_enabled: { type: Boolean, default: true },
   max_consecutive_days: num(1, 14),
   // Defaulted so settings documents saved before these fields existed pick them up on load.

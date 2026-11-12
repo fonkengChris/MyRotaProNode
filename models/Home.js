@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const SERVICE_TYPES = ['supported_living', 'community_outreach', 'day_centre'];
+
 const homeSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -45,6 +47,14 @@ const homeSchema = new mongoose.Schema({
       lowercase: true,
       trim: true
     }
+  },
+  // Kind of service the home runs. Community outreach shifts are short visiting rounds, so
+  // back-to-back outreach shifts use SolverSettings.outreach_min_rest_hours instead of the
+  // normal minimum rest (utils/shiftHours.js minRestHoursBetween). Admin-only to change.
+  service_type: {
+    type: String,
+    enum: SERVICE_TYPES,
+    default: 'supported_living'
   },
   capacity: {
     type: Number,
@@ -124,6 +134,7 @@ homeSchema.virtual('publicInfo').get(function() {
     name: this.name,
     location: this.location,
     contact_info: this.contact_info,
+    service_type: this.service_type,
     capacity: this.capacity,
     operating_hours: this.operating_hours,
     break_policy: this.break_policy,
@@ -156,5 +167,13 @@ homeSchema.methods.isOperational = function(time) {
 // Ensure virtual fields are serialized
 homeSchema.set('toJSON', { virtuals: true });
 homeSchema.set('toObject', { virtuals: true });
+
+homeSchema.statics.SERVICE_TYPES = SERVICE_TYPES;
+
+// Ids (as strings) of every community outreach home, for the rest rule.
+homeSchema.statics.getOutreachHomeIds = async function() {
+  const ids = await this.find({ service_type: 'community_outreach' }).distinct('_id');
+  return new Set(ids.map(String));
+};
 
 module.exports = mongoose.model('Home', homeSchema);

@@ -54,6 +54,24 @@ describe('AISolver rest and overlap', () => {
     const background = shift('2026-10-05', '08:00', '20:00');
     expect(solver.violatesRestOrOverlap(background, [oneToOne])).toBe(false);
   });
+
+  test('two outreach shifts only need outreach_min_rest_hours between them', () => {
+    const solver = makeSolver();
+    solver.outreachHomeIds = new Set(['outreach1', 'outreach2']);
+    const morning = shift('2026-10-05', '08:00', '14:00', { home_id: 'outreach1' });
+    const afterHalfHour = shift('2026-10-05', '14:30', '21:00', { home_id: 'outreach2' });
+    const afterTenMins = shift('2026-10-05', '14:10', '21:00', { home_id: 'outreach1' });
+    expect(solver.violatesRestOrOverlap(afterHalfHour, [morning])).toBe(false);
+    expect(solver.violatesRestOrOverlap(afterTenMins, [morning])).toBe(true);
+  });
+
+  test('the normal rest rule applies when only one shift is outreach', () => {
+    const solver = makeSolver();
+    solver.outreachHomeIds = new Set(['outreach1']);
+    const outreach = shift('2026-10-05', '08:00', '14:00', { home_id: 'outreach1' });
+    const supportedLiving = shift('2026-10-05', '15:00', '21:00', { home_id: 'home1' });
+    expect(solver.violatesRestOrOverlap(supportedLiving, [outreach])).toBe(true);
+  });
 });
 
 describe('AISolver consecutive days', () => {
