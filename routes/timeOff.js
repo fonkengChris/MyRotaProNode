@@ -172,6 +172,63 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Book leave directly for a staff member: created already approved, skipping the request
+// step. Booking is an approval decision, so it is admin-only and runs the same checks as
+// approving (rota conflict blocks; the per-home limit needs an explicit override).
+router.post('/book', requireRole(DECISION_ROLES), async (req, res) => {
+  try {
+    const { user_id, start_date, end_date } = req.body;
+
+    if (!user_id || !start_date || !end_date) {
+      return res.status(400).json({ error: 'user_id, start_date, and end_date are required' });
+    }
+    if (end_date < start_date) {
+      return res.status(400).json({ error: 'End date must be on or after the start date' });
+    }
+    if (!(await User.exists({ _id: user_id }))) {
+      return res.status(404).json({ error: 'Staff member not found' });
+    }
+
+    const request = new TimeOffRequest({ ...pickEditable(req.body), user_id });
+
+    const conflict = await findTimetableConflictForLeave(user_id, start_date, end_date);
+    if (conflict) {
+      return res.status(400).json({
+        error: 'Cannot book leave for scheduled dates',
+        details: buildAutoDenialReason(conflict)
+      });
+    }
+
+    const limitConflict = await findHomeLeaveLimitConflict(
+      user_id, start_date, end_date, request.request_type
+    );
+    if (limitConflict) {
+      const message = buildHomeLeaveLimitMessage(limitConflict);
+      if (req.body?.override_home_leave_limit !== true) {
+        return res.status(409).json({
+          error: 'Home leave limit exceeded',
+          code: 'HOME_LEAVE_LIMIT',
+          details: message,
+          conflict: limitConflict
+        });
+      }
+      request.home_leave_limit_warning = { ...limitConflict, message };
+      request.home_leave_limit_override = { approved_by: req.user._id, approved_at: new Date() };
+    }
+
+    request.approve(req.user._id);
+    await request.save();
+    await syncAvailabilityForApprovedLeave(request);
+
+    await request.populate('user_id', 'name email role');
+    await request.populate('approved_by', 'name email role');
+    res.status(201).json(request);
+  } catch (error) {
+    console.error('Error booking leave:', error);
+    res.status(400).json({ error: 'Failed to book leave', details: error.message });
+  }
+});
+
 // Update time-off request (pending only; the requester or an approver). Status can't be
 // changed here, so edits can't skip the approval checks.
 router.put('/:id', async (req, res) => {
