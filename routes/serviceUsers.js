@@ -3,10 +3,11 @@ const router = express.Router();
 const mongoose = require('mongoose');
 const ServiceUser = require('../models/ServiceUser');
 const Home = require('../models/Home');
+const { sortHomes } = require('../utils/homeOrder');
 const User = require('../models/User');
 const { requireRole, hasAccess, getUserHomeIds } = require('../middleware/auth');
 
-const HOME_FIELDS = 'name location contact_info operating_hours capacity is_active';
+const HOME_FIELDS = 'name service_type location contact_info operating_hours capacity is_active';
 const KEY_WORKER_FIELDS = 'name email phone role';
 const STAFF_FIELDS = 'name email phone role type homes is_active';
 
@@ -128,7 +129,7 @@ router.get('/my-caseload', canListServiceUsers, async (req, res) => {
       User.find({ 'homes.home_id': { $in: homeIds }, is_active: true }).select(STAFF_FIELDS).sort({ name: 1 })
     ]);
 
-    const caseload = homes.map(home => {
+    const caseload = sortHomes(homes).map(home => {
       const homeId = home._id.toString();
       return {
         home,

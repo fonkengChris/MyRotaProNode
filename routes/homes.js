@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Home = require('../models/Home');
 const { authenticateToken, requireRole, getUserHomeIds, reachesAllHomesInAnyArea } = require('../middleware/auth');
+const { sortHomes } = require('../utils/homeOrder');
 
 // Get all homes (admins see all; everyone else only their own home(s))
 router.get('/', authenticateToken, async (req, res) => {
@@ -11,7 +12,7 @@ router.get('/', authenticateToken, async (req, res) => {
       filter._id = { $in: getUserHomeIds(req.user) };
     }
     const homes = await Home.find(filter).populate('manager_id', 'name email');
-    res.json(homes);
+    res.json(sortHomes(homes));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch homes' });
   }

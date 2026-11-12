@@ -1407,7 +1407,7 @@ class AISolver {
                 user_id: ass.user_id,
                 status: ass.status || 'assigned',
                 assigned_at: new Date(),
-                note: `AI Generated - Score: ${ass.score || 100}`
+                note: `Auto Generated - Score: ${ass.score || 100}`
               });
               addedUserIds.push(ass.user_id);
             } else {
