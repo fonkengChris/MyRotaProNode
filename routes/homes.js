@@ -3,6 +3,7 @@ const router = express.Router();
 const Home = require('../models/Home');
 const { authenticateToken, requireRole, getUserHomeIds, reachesAllHomesInAnyArea } = require('../middleware/auth');
 const { sortHomes } = require('../utils/homeOrder');
+const { linkHomeToPeerServices } = require('../utils/homeServices');
 
 // Get all homes (admins see all; everyone else only their own home(s))
 router.get('/', authenticateToken, async (req, res) => {
@@ -46,7 +47,14 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req, res) => 
 
     const home = new Home(req.body);
     await home.save();
-    
+
+    // Without a service link the weekly schedule editor has no services to offer.
+    try {
+      await linkHomeToPeerServices(home);
+    } catch (linkError) {
+      console.error('Failed to link new home to services:', linkError);
+    }
+
     // Populate the manager details before sending response
     const populatedHome = await Home.findById(home._id).populate('manager_id', 'name email');
     
