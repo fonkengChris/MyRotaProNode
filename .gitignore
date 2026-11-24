@@ -67,3 +67,6 @@ Thumbs.db
 
 # Generated staff credentials (plain-text passwords) — never commit
 scripts/output/
+
+# Markdown notes (incl. scheduler-updates.md) stay local
+*.md

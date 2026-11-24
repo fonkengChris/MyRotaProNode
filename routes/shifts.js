@@ -28,6 +28,24 @@ const {
   isOneToOne,
   isCoveredByBackground,
 } = require('../utils/oneToOne');
+const {
+  isDraftAssignment,
+  isLiveAssignment,
+  liveAssignmentMatch,
+  stripDraftAssignments,
+} = require('../utils/draftAssignments');
+const {
+  publishDraftAssignments,
+  findUnpublishedTimetable,
+  draftContextForShift,
+  isoWeekRange,
+} = require('../services/draftPublishing');
+
+// Draft (unpublished auto-generated) assignments are shown only to rota editors, and only
+// when asked for (the Rota Editor). Everything else, My Schedule included, sees live work.
+function wantsDrafts(req) {
+  return String(req.query.include_drafts) === 'true' && hasAccess(req.user, 'rota', 'view');
+}
 
 // Resolve the target staff member for a clock action: support workers may only act on
 // themselves; managers/admins/senior staff may pass a user_id to act on someone's behalf.
@@ -65,6 +83,7 @@ async function checkShiftHome(req, res, next) {
 router.get('/', async (req, res) => {
   try {
     const { home_id, service_id, service_user_id, kind, date, start_date, end_date, user_id } = req.query;
+    const includeDrafts = wantsDrafts(req);
     const filter = {};
     
     // Validate home_id if provided
@@ -88,7 +107,8 @@ router.get('/', async (req, res) => {
     
     // If user_id is provided, filter by assigned staff
     if (user_id && user_id !== 'undefined' && user_id !== 'null') {
-      filter['assigned_staff.user_id'] = user_id;
+      if (includeDrafts) filter['assigned_staff.user_id'] = user_id;
+      else filter.assigned_staff = { $elemMatch: liveAssignmentMatch(user_id) };
     }
 
     // A key worker's own shifts are always theirs to see; anyone else's follow home scope.
@@ -103,7 +123,7 @@ router.get('/', async (req, res) => {
     const shifts = await Shift.find(filter)
       .populate('service_id', 'name')
       .populate('service_user_id', 'name');
-    res.json(shifts);
+    res.json(includeDrafts ? shifts : shifts.map(stripDraftAssignments));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch shifts' });
   }
@@ -161,7 +181,8 @@ router.get('/available', requireAccess('shift_selection', 'visible'), async (req
       return !isAlreadyAssigned;
     });
 
-    res.json(availableShifts);
+    // Drafts still count towards a shift being full above, but staff don't see who holds them.
+    res.json(availableShifts.map(stripDraftAssignments));
   } catch (error) {
     console.error('Error fetching available shifts:', error);
     res.status(500).json({ error: 'Failed to fetch available shifts' });
@@ -199,7 +220,7 @@ router.get(
         const scheduledEnd = shiftEndDate(shift);
 
         for (const a of shift.assigned_staff || []) {
-          if (a.status === 'declined') continue;
+          if (a.status === 'declined' || isDraftAssignment(a)) continue;
 
           // Skip staff who were never scheduled to a real attendance state.
           const attendanceStatus = a.attendance_status || 'not_started';
@@ -357,7 +378,7 @@ router.get('/:id', async (req, res) => {
     if (!isAssigned && keyWorkerOutOfScope(req.user, 'rota', shift.home_id)) {
       return res.status(403).json(OUT_OF_SCOPE);
     }
-    res.json(shift);
+    res.json(wantsDrafts(req) ? shift : stripDraftAssignments(shift));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch shift' });
   }
@@ -717,10 +738,15 @@ router.post('/:id/assign', async (req, res) => {
     }
     const { restExceptionPending, capExceptionStatus, capExceptionHours } = decision;
 
+    // Rota edits in a week that is still a draft join the draft; staff selecting a shift
+    // for themselves (Shift Selection) always get a live assignment.
+    const draft = hasAccess(currentUser, 'rota') ? await draftContextForShift(shift) : null;
+
     shift.assignStaff(user_id, note, {
       rest_exception_status: restExceptionPending ? 'pending' : 'none',
       hours_cap_exception_status: capExceptionStatus,
-      hours_cap_exception_hours: capExceptionHours
+      hours_cap_exception_hours: capExceptionHours,
+      ...draft
     });
     await shift.save();
 
@@ -729,7 +755,7 @@ router.post('/:id/assign', async (req, res) => {
       notifyAdminsHoursCapRequested(shift, staffUser, capExceptionHours, capPolicy.fulltime_hours)
         .catch((error) => console.error('Failed to notify admins of hours-cap request:', error));
     }
-    queueShiftChanges(currentUser._id, [{ userId: user_id, shift, kind: 'assigned' }]);
+    if (!draft) queueShiftChanges(currentUser._id, [{ userId: user_id, shift, kind: 'assigned' }]);
 
     const payload = shift.toObject({ virtuals: true });
     payload.rest_exception_pending = restExceptionPending;
@@ -858,6 +884,8 @@ router.post('/duplicate-week', requireRole(['admin', 'key_worker', 'senior_staff
       const target = (unmatched.get(shiftMatchKey(fields)) || []).shift() || new Shift(fields);
       const isNew = target.isNew;
       const added = [];
+      // Copies are drafts when next week is still a draft, or when the copied assignment was.
+      const targetDraft = await draftContextForShift(fields);
       for (const assignment of source.assigned_staff.filter(isAllocated)) {
         const userId = String(assignment.user_id);
         const member = staffById.get(userId);
@@ -873,8 +901,9 @@ router.post('/duplicate-week', requireRole(['admin', 'key_worker', 'senior_staff
         } else if (decision.pendingReasons.length > 0) {
           skip(decision.pendingReasons.join('; '), member.name);
         } else {
-          target.assignStaff(userId, assignment.note);
-          added.push(userId);
+          const draft = targetDraft || (isDraftAssignment(assignment) ? { is_draft: true, draft_timetable_id: null } : null);
+          target.assignStaff(userId, assignment.note, { ...draft });
+          added.push({ userId, draft: !!draft });
         }
       }
 
@@ -889,7 +918,10 @@ router.post('/duplicate-week', requireRole(['admin', 'key_worker', 'senior_staff
         if (isNew) result.shifts_created += 1;
         else result.shifts_updated += 1;
         result.assignments_copied += added.length;
-        queueShiftChanges(req.user._id, added.map((userId) => ({ userId, shift: target, kind: 'assigned' })));
+        queueShiftChanges(
+          req.user._id,
+          added.filter((a) => !a.draft).map(({ userId }) => ({ userId, shift: target, kind: 'assigned' }))
+        );
       }
     }
 
@@ -897,6 +929,73 @@ router.post('/duplicate-week', requireRole(['admin', 'key_worker', 'senior_staff
   } catch (error) {
     console.error('Error duplicating week:', error);
     res.status(500).json({ error: 'Failed to copy this week. Anything already copied was kept, so it is safe to try again.' });
+  }
+});
+
+// Publish a home's Mon–Sun week of Rota Editor drafts: the assignments go live and staff are
+// notified once each. Drafts belonging to a timetable are published with that timetable.
+router.post('/publish-drafts', requireRole(['admin']), async (req, res) => {
+  try {
+    const { home_id: homeId, week_start: weekStart } = req.body;
+    if (typeof homeId !== 'string' || !mongoose.Types.ObjectId.isValid(homeId)) {
+      return res.status(400).json({ error: 'Valid home_id is required' });
+    }
+    const monday = moment.utc(typeof weekStart === 'string' ? weekStart : '', 'YYYY-MM-DD', true);
+    if (!monday.isValid() || monday.isoWeekday() !== 1) {
+      return res.status(400).json({ error: 'week_start must be a Monday in YYYY-MM-DD format' });
+    }
+    const { start, end } = isoWeekRange(monday.format('YYYY-MM-DD'));
+    const weekFilter = { home_id: homeId, date: { $gte: start, $lte: end } };
+
+    const published = await publishDraftAssignments(weekFilter, { 'a.draft_timetable_id': null }, req.user._id);
+    const timetable = await findUnpublishedTimetable([homeId], start, end);
+    const timetableDrafts = timetable
+      ? await Shift.exists({ ...weekFilter, 'assigned_staff.draft_timetable_id': timetable._id })
+      : null;
+
+    if (published === 0 && timetableDrafts) {
+      return res.status(409).json({
+        error: `These drafts belong to the timetable "${timetable.name}". Publish it from Timetables.`,
+        timetable: { id: timetable._id, name: timetable.name }
+      });
+    }
+    res.json({
+      assignments_published: published,
+      timetable: timetableDrafts ? { id: timetable._id, name: timetable.name } : null
+    });
+  } catch (error) {
+    console.error('Error publishing draft assignments:', error);
+    res.status(500).json({ error: 'Failed to publish drafts' });
+  }
+});
+
+// Throw away a home's Mon–Sun week of draft assignments (Auto Generate and timetable drafts
+// alike). Live assignments are untouched and, as drafts were never announced, nobody is told.
+router.post('/discard-drafts', requireRole(['admin', 'key_worker']), requireAccess('rota'), async (req, res) => {
+  try {
+    const { home_id: homeId, week_start: weekStart } = req.body;
+    if (typeof homeId !== 'string' || !mongoose.Types.ObjectId.isValid(homeId)) {
+      return res.status(400).json({ error: 'Valid home_id is required' });
+    }
+    const monday = moment.utc(typeof weekStart === 'string' ? weekStart : '', 'YYYY-MM-DD', true);
+    if (!monday.isValid() || monday.isoWeekday() !== 1) {
+      return res.status(400).json({ error: 'week_start must be a Monday in YYYY-MM-DD format' });
+    }
+    if (keyWorkerOutOfScope(req.user, 'rota', homeId)) {
+      return res.status(403).json(OUT_OF_SCOPE);
+    }
+    const { start, end } = isoWeekRange(monday.format('YYYY-MM-DD'));
+    const filter = { home_id: homeId, date: { $gte: start, $lte: end }, 'assigned_staff.is_draft': true };
+
+    const shifts = await Shift.find(filter).select('assigned_staff.is_draft').lean();
+    const discarded = shifts.reduce((n, s) => n + s.assigned_staff.filter(isDraftAssignment).length, 0);
+    if (discarded > 0) {
+      await Shift.updateMany(filter, { $pull: { assigned_staff: { is_draft: true } } });
+    }
+    res.json({ assignments_discarded: discarded });
+  } catch (error) {
+    console.error('Error discarding draft assignments:', error);
+    res.status(500).json({ error: 'Failed to discard drafts' });
   }
 });
 
@@ -915,7 +1014,7 @@ async function confirmFlagged(field, req, res) {
   const wasPending = assignment[field] === 'pending';
   assignment[field] = 'confirmed';
   await shift.save();
-  if (wasPending) {
+  if (wasPending && isLiveAssignment(assignment)) {
     queueShiftChanges(req.user._id, [{ userId: assignment.user_id, shift, kind: 'approved' }]);
   }
   res.json(shift);
@@ -930,6 +1029,7 @@ async function removeFlagged(req, res) {
   if (isOneToOne(shift) && !hasAccess(req.user, 'rota')) {
     return res.status(403).json({ error: 'You do not have access to unassign staff from 1-to-1 shifts' });
   }
+  const removed = shift.assigned_staff.find((a) => a.user_id.toString() === String(req.params.userId));
   try {
     shift.removeStaff(req.params.userId);
   } catch (error) {
@@ -939,7 +1039,9 @@ async function removeFlagged(req, res) {
     throw error;
   }
   await shift.save();
-  queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
+  if (isLiveAssignment(removed)) {
+    queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
+  }
   res.json(shift);
 }
 
@@ -997,7 +1099,7 @@ router.post('/:id/clock-in', async (req, res) => {
     }
 
     const assignment = shift.assigned_staff.find(
-      (a) => a.user_id.toString() === target.userId && a.status !== 'declined'
+      (a) => a.user_id.toString() === target.userId && a.status !== 'declined' && isLiveAssignment(a)
     );
     if (!assignment) {
       return res.status(403).json({
@@ -1073,7 +1175,7 @@ router.post('/:id/clock-out', async (req, res) => {
     }
 
     const assignment = shift.assigned_staff.find(
-      (a) => a.user_id.toString() === target.userId && a.status !== 'declined'
+      (a) => a.user_id.toString() === target.userId && a.status !== 'declined' && isLiveAssignment(a)
     );
     if (!assignment) {
       return res.status(403).json({
@@ -1131,9 +1233,12 @@ router.delete('/:id/assign/:userId', requireRole(['admin', 'key_worker', 'senior
       return res.status(403).json({ error: 'You do not have access to unassign staff from 1-to-1 shifts' });
     }
 
+    const removed = shift.assigned_staff.find((a) => a.user_id.toString() === String(req.params.userId));
     shift.removeStaff(req.params.userId);
     await shift.save();
-    queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
+    if (isLiveAssignment(removed)) {
+      queueShiftChanges(req.user._id, [{ userId: req.params.userId, shift, kind: 'removed' }]);
+    }
     
     res.json(shift);
   } catch (error) {

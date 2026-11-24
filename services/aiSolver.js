@@ -185,6 +185,8 @@ class AISolver {
   // serviceId: omit or pass null/undefined to include all services (multi-service / cross-service staff)
   // options.allowedRoles: overrides AUTO_ASSIGNABLE_ROLES for callers that need a
   //   different pool (defaults to support workers only)
+  // options.draft: { timetableId? } saves new assignments as drafts (hidden from staff and
+  //   not notified until published; see utils/draftAssignments.js)
   async generateRota(weekStartDate, weekEndDate, homeIds, serviceId, existingShifts = [], options = {}) {
     // Assignments saved so far, so staff are still told if a later week fails.
     const newAssignments = [];
@@ -350,7 +352,7 @@ class AISolver {
         });
 
         if (hasValidShiftIds) {
-          await this.applyAssignmentsToDatabaseIncrementally(segmentAssignments, newAssignments);
+          await this.applyAssignmentsToDatabaseIncrementally(segmentAssignments, newAssignments, options.draft);
         } else {
           console.log('AI Solver: Skipping database application for segment - shifts appear to be test data');
         }
@@ -402,7 +404,8 @@ class AISolver {
         error: error.message
       };
     } finally {
-      if (options.notifyActorId) queueShiftChanges(options.notifyActorId, newAssignments);
+      // Drafts are announced when they are published, not when generated.
+      if (options.notifyActorId && !options.draft) queueShiftChanges(options.notifyActorId, newAssignments);
     }
   }
 
@@ -1361,7 +1364,7 @@ class AISolver {
   }
 
   // Apply the assignments to the database incrementally to prevent double-booking
-  async applyAssignmentsToDatabaseIncrementally(assignments, newAssignments = []) {
+  async applyAssignmentsToDatabaseIncrementally(assignments, newAssignments = [], draft = null) {
     try {
       // Sort assignments by date and time to process them chronologically
       const sortedAssignments = assignments.sort((a, b) => {
@@ -1407,7 +1410,8 @@ class AISolver {
                 user_id: ass.user_id,
                 status: ass.status || 'assigned',
                 assigned_at: new Date(),
-                note: `Auto Generated - Score: ${ass.score || 100}`
+                note: `Auto Generated - Score: ${ass.score || 100}`,
+                ...(draft && { is_draft: true, draft_timetable_id: draft.timetableId || null })
               });
               addedUserIds.push(ass.user_id);
             } else {

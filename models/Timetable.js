@@ -120,6 +120,11 @@ const timetableSchema = new mongoose.Schema({
         assigned_at: {
           type: Date,
           default: Date.now
+        },
+        // Unpublished auto-generated assignment (see utils/draftAssignments.js).
+        is_draft: {
+          type: Boolean,
+          default: false
         }
       }],
       notes: String,

@@ -9,6 +9,8 @@ const { requireRole, getUserHomeIds } = require('../middleware/auth');
 const { body, validationResult } = require('express-validator');
 const { buildTimetableSnapshot, applySnapshot } = require('../services/timetableSync');
 const { queueForAssignees } = require('../services/shiftChangeNotifications');
+const { publishDraftAssignments } = require('../services/draftPublishing');
+const { isLiveAssignment } = require('../utils/draftAssignments');
 const { createTimetableHomePdf, homeIdStr, safeFilePart } = require('../utils/timetablePdf');
 
 function withTimeout(promise, timeoutMs, timeoutMessage) {
@@ -164,7 +166,7 @@ function staffVisibleHomeIds(timetable, user) {
   const userId = String(user._id);
   for (const week of timetable.weekly_rotas || []) {
     for (const shift of week.shifts || []) {
-      if ((shift.assigned_staff || []).some((s) => homeIdStr(s.user_id) === userId)) {
+      if ((shift.assigned_staff || []).some((s) => isLiveAssignment(s) && homeIdStr(s.user_id) === userId)) {
         visible.add(homeIdStr(shift.home_id));
       }
     }
@@ -185,7 +187,10 @@ function scopeTimetableToHomes(timetable, homeIds) {
   let totalHours = 0;
   let totalAssignments = 0;
   json.weekly_rotas = (json.weekly_rotas || []).map((week) => {
-    const shifts = (week.shifts || []).filter((s) => homeIds.has(homeIdStr(s.home_id)));
+    // Staff never see unpublished (draft) assignments.
+    const shifts = (week.shifts || [])
+      .filter((s) => homeIds.has(homeIdStr(s.home_id)))
+      .map((s) => ({ ...s, assigned_staff: (s.assigned_staff || []).filter(isLiveAssignment) }));
     const hours = shifts.reduce((t, s) => t + (s.duration_hours || 0), 0);
     const paid = shifts.reduce((t, s) => t + (s.paid_work_hours ?? s.duration_hours ?? 0), 0);
     const assignments = shifts.reduce((t, s) => t + (s.assigned_staff?.length || 0), 0);
@@ -487,17 +492,72 @@ router.post('/:id/publish', [
       return res.status(400).json({ error: 'Can only publish generated timetables' });
     }
     
+    // Re-check now: leave approved since the last sync may clash with draft assignments.
+    const snapshot = await buildTimetableSnapshot(timetable);
+    if (snapshot.errors.length === 0) applySnapshot(timetable, snapshot);
     if (timetable.conflicts_detected > 0) {
-      return res.status(400).json({ error: 'Cannot publish timetable with conflicts' });
+      timetable.status = 'draft';
+      await timetable.save();
+      return res.status(400).json({
+        error: `Cannot publish: ${timetable.conflicts_detected} conflict(s) to resolve in the Rota Editor first (e.g. staff on approved leave)`
+      });
     }
     
+    // Allocate: the draft assignments go live and their staff are notified once each.
+    const assignmentsPublished = await publishDraftAssignments(
+      { 'assigned_staff.draft_timetable_id': timetable._id },
+      { 'a.draft_timetable_id': timetable._id },
+      req.user._id
+    );
+
     await timetable.publish();
     await timetable.save();
     
-    res.json(timetable);
+    res.json({ ...timetable.toJSON(), assignments_published: assignmentsPublished });
   } catch (error) {
     console.error('Error publishing timetable:', error);
     res.status(400).json({ error: 'Failed to publish timetable' });
+  }
+});
+
+// Discard a generated timetable's draft: its draft assignments are removed (live ones are kept,
+// nobody is notified) and the timetable goes back to "not generated" so it can be regenerated.
+router.post('/:id/discard-draft', [
+  requireRole(['admin'])
+], async (req, res) => {
+  try {
+    const timetable = await Timetable.findById(req.params.id);
+    if (!timetable) {
+      return res.status(404).json({ error: 'Timetable not found' });
+    }
+    const isGeneratedDraft = timetable.status === 'generated' ||
+      (timetable.status === 'draft' && timetable.generation_completed_at);
+    if (!isGeneratedDraft) {
+      return res.status(400).json({ error: 'Only a generated, unpublished timetable has a draft to discard' });
+    }
+
+    const filter = { 'assigned_staff.draft_timetable_id': timetable._id };
+    const shifts = await Shift.find(filter).select('assigned_staff.draft_timetable_id').lean();
+    const discarded = shifts.reduce(
+      (n, s) => n + s.assigned_staff.filter((a) => String(a.draft_timetable_id) === String(timetable._id)).length,
+      0
+    );
+
+    // Reset first so the shift writes below don't re-sync a snapshot that is being thrown away.
+    timetable.status = 'draft';
+    timetable.generation_completed_at = null;
+    timetable.generation_errors = [];
+    applySnapshot(timetable, { weeklyRotas: [], totalShifts: 0, totalHours: 0, totalAssignments: 0, totalConflicts: 0 });
+    await timetable.save();
+
+    if (discarded > 0) {
+      await Shift.updateMany(filter, { $pull: { assigned_staff: { draft_timetable_id: timetable._id } } });
+    }
+
+    res.json({ ...timetable.toJSON(), assignments_discarded: discarded });
+  } catch (error) {
+    console.error('Error discarding timetable draft:', error);
+    res.status(500).json({ error: 'Failed to discard draft' });
   }
 });
 
@@ -711,7 +771,8 @@ async function generateTimetableAsync(timetableId, userId) {
           timetable.home_ids,
           timetable.service_id ?? undefined,
           [],
-          { notifyActorId: userId }
+          // Assignments stay drafts until the timetable is published ("Allocate & publish").
+          { notifyActorId: userId, draft: { timetableId: timetable._id } }
         ),
         fullGenerationTimeoutMs,
         `Timetable generation timed out after ${fullGenerationTimeoutMs / 1000} seconds`

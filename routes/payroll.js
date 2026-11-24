@@ -23,6 +23,17 @@ const {
   shiftDateOffset,
 } = require('../utils/oneToOne');
 const { createPayrollPdf, safeFilePart } = require('../utils/payrollPdf');
+const { isLiveAssignment } = require('../utils/draftAssignments');
+
+// Unpublished (draft) rota assignments are not work anyone has been given, so payroll drops them.
+function withoutDraftAssignments(shifts) {
+  for (const shift of shifts) {
+    if ((shift.assigned_staff || []).some((a) => !isLiveAssignment(a))) {
+      shift.assigned_staff = shift.assigned_staff.filter(isLiveAssignment);
+    }
+  }
+  return shifts;
+}
 const { hourlyRateFor } = require('../utils/payRates');
 
 const SLEEP_NIGHT_FLAT_PAY_GBP = 55;
@@ -219,7 +230,7 @@ async function addOneToOneHours({
     is_active: true,
     shift_type: { $ne: 'one_to_one' },
     'assigned_staff.user_id': { $in: [...staffIds] },
-  });
+  }).then(withoutDraftAssignments);
 
   const bgShiftsByUser = new Map();
   const paidWindowsByUser = new Map();
@@ -344,7 +355,9 @@ async function buildPayrollRecords({
     shiftFilter.home_id = Array.isArray(homeFilter) ? { $in: homeFilter } : homeFilter;
   }
 
-  const shifts = await Shift.find(shiftFilter).populate('assigned_staff.user_id', PAYROLL_STAFF_FIELDS);
+  const shifts = withoutDraftAssignments(
+    await Shift.find(shiftFilter).populate('assigned_staff.user_id', PAYROLL_STAFF_FIELDS)
+  );
 
   // Break deductions are configured per home, so resolve each home's policy once and
   // key it by home id for use while walking the shifts below.

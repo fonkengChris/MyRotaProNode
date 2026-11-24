@@ -6,8 +6,11 @@ const { availabilityStatus } = require('../utils/availability');
 const Home = require('../models/Home');
 const TimeOffRequest = require('../models/TimeOffRequest');
 const SolverSettings = require('../models/SolverSettings');
+const { liveAssignmentMatch } = require('../utils/draftAssignments');
 
-const LOCKED_TIMETABLE_STATUSES = ['generated', 'published'];
+// Only a published timetable locks leave. A generated one is still a draft: leave approved
+// against it shows up as a conflict there, to be fixed before it can be published.
+const LOCKED_TIMETABLE_STATUSES = ['published'];
 
 // Unplanned leave can't reasonably be refused, so these types skip the limit check
 // (they still count towards the number of staff away).
@@ -46,7 +49,7 @@ function userAssignedOnTimetableInRange(timetable, userIdStr, startDate, endDate
     for (const shift of week.shifts || []) {
       if (shift.date >= startDate && shift.date <= endDate) {
         const assigned = shift.assigned_staff || [];
-        if (assigned.some((a) => a.user_id?.toString() === userIdStr)) {
+        if (assigned.some((a) => a.user_id?.toString() === userIdStr && a.is_draft !== true)) {
           return true;
         }
       }
@@ -56,8 +59,8 @@ function userAssignedOnTimetableInRange(timetable, userIdStr, startDate, endDate
 }
 
 /**
- * Returns conflict info if the user is scheduled on a generated/published timetable
- * or live shifts during the requested leave period.
+ * Returns conflict info if the user is scheduled on a published timetable or live
+ * (non-draft) shifts during the requested leave period.
  */
 async function findTimetableConflictForLeave(userId, startDate, endDate) {
   const homeIds = await getUserHomeIdStrings(userId);
@@ -87,7 +90,7 @@ async function findTimetableConflictForLeave(userId, startDate, endDate) {
   const liveShift = await Shift.findOne({
     date: { $gte: startDate, $lte: endDate },
     home_id: { $in: homeIds },
-    'assigned_staff.user_id': userId
+    assigned_staff: { $elemMatch: liveAssignmentMatch(userId) }
   }).select('date home_id');
 
   if (liveShift) {
@@ -102,7 +105,7 @@ async function findTimetableConflictForLeave(userId, startDate, endDate) {
 
 function buildAutoDenialReason(conflict) {
   if (conflict.source === 'timetable') {
-    return `Automatically rejected: you are scheduled on the generated timetable "${conflict.name}" during these dates. Contact your manager to adjust the rota before requesting leave.`;
+    return `Automatically rejected: you are scheduled on the published timetable "${conflict.name}" during these dates. Contact your manager to adjust the rota before requesting leave.`;
   }
   return 'Automatically rejected: you are already assigned to shifts on a published schedule during these dates. Contact your manager before requesting leave.';
 }

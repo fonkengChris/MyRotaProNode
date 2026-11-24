@@ -34,6 +34,7 @@ const {
   notifyAdminsClockOutOverdue,
 } = require('./attendanceNotifications');
 const { isOneToOne, isCoveredByBackground } = require('../utils/oneToOne');
+const { isDraftAssignment } = require('../utils/draftAssignments');
 
 const REMINDER_MINUTES = parseInt(process.env.ATTENDANCE_REMINDER_MINUTES, 10) || 5;
 const ESCALATION_MINUTES = parseInt(process.env.ATTENDANCE_ESCALATION_MINUTES, 10) || 15;
@@ -76,7 +77,7 @@ async function runClockInCheck(now) {
     if (minutesLate < REMINDER_MINUTES) continue; // shift not yet late enough
 
     for (const assignment of shift.assigned_staff) {
-      if (assignment.status === 'declined') continue;
+      if (assignment.status === 'declined' || isDraftAssignment(assignment)) continue;
       if (assignment.clock_in_time) continue; // already clocked in
       if (assignment.attendance_status === 'missed') continue; // already resolved
       if (Shift.isAwaitingApproval(assignment)) continue; // can't clock in until approved
@@ -137,7 +138,7 @@ async function runClockOutCheck(now) {
 
     let dirty = false;
     for (const assignment of shift.assigned_staff) {
-      if (assignment.status === 'declined') continue;
+      if (assignment.status === 'declined' || isDraftAssignment(assignment)) continue;
       if (!assignment.clock_in_time || assignment.clock_out_time) continue;
       if (assignment.clock_out_escalation_sent_at) continue;
 

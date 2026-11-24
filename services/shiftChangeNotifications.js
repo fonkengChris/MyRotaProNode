@@ -13,6 +13,7 @@ const Shift = require('../models/Shift');
 const { safeSendMessage } = require('./attendanceNotifications');
 const { sendPushToUser } = require('./pushService');
 const { shiftEndDate } = require('../utils/shiftTime');
+const { isLiveAssignment } = require('../utils/draftAssignments');
 
 const COALESCE_MS = 5000;
 const MAX_LINES = 30;
@@ -131,7 +132,9 @@ function queueForAssignees(actorId, shifts, kind) {
     actorId,
     shifts
       .filter((shift) => shift.is_active !== false)
-      .flatMap((shift) => (shift.assigned_staff || []).map((a) => ({ userId: a.user_id, shift, kind })))
+      .flatMap((shift) =>
+        (shift.assigned_staff || []).filter(isLiveAssignment).map((a) => ({ userId: a.user_id, shift, kind }))
+      )
   );
 }
 
@@ -150,7 +153,10 @@ function queueShiftEdited(actorId, before, after) {
     previous = before;
   }
   if (!kind) return;
-  queueShiftChanges(actorId, (after.assigned_staff || []).map((a) => ({ userId: a.user_id, shift: after, kind, previous })));
+  queueShiftChanges(
+    actorId,
+    (after.assigned_staff || []).filter(isLiveAssignment).map((a) => ({ userId: a.user_id, shift: after, kind, previous }))
+  );
 }
 
 /** Tell both parties (other than whoever accepted it) that a swap has gone through. */

@@ -145,6 +145,14 @@ router.post('/generate-rota', [
       }
     }
 
+    // Auto Generate produces drafts; inside an unpublished timetable they join its draft.
+    const { findUnpublishedTimetable } = require('../services/draftPublishing');
+    const draftTimetable = await findUnpublishedTimetable(
+      homeIdArray,
+      String(week_start_date).slice(0, 10),
+      String(week_end_date).slice(0, 10)
+    );
+
     // Initialize AI solver
     const aiSolver = new AISolver();
     
@@ -155,7 +163,7 @@ router.post('/generate-rota', [
       homeIdArray,
       service_id,
       shifts,
-      { notifyActorId: req.user._id }
+      { notifyActorId: req.user._id, draft: { timetableId: draftTimetable?._id || null } }
     );
 
     if (!result.success) {
@@ -188,7 +196,7 @@ router.post('/generate-rota', [
     }
 
     res.json({
-      message: `Rota generated successfully for ${result.homes_processed} home(s)`,
+      message: `Draft rota generated for ${result.homes_processed} home(s). Review it, then publish to allocate staff.`,
       data: result,
       summary: distributionSummary
     });

@@ -75,6 +75,19 @@ const shiftSchema = new mongoose.Schema({
       default: Date.now
     },
     note: String,
+    // Draft assignments come from auto-generation (timetable or Rota Editor) and stay hidden
+    // from staff, notifications, attendance and payroll until an admin publishes them.
+    // Planning checks (rest, overlap, hours) still count them. See utils/draftAssignments.js.
+    is_draft: {
+      type: Boolean,
+      default: false
+    },
+    // Set when the draft belongs to a timetable; that timetable's publish promotes it.
+    draft_timetable_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Timetable',
+      default: null
+    },
     // Rest-exception review: set to 'pending' when a support worker self-selects a shift
     // that breaks only the <8h rest rule (assign-now, flag-for-review). An admin then
     // 'confirmed's it or removes the assignment. 'none' for normal assignments.
@@ -158,6 +171,7 @@ shiftSchema.index({ 'assigned_staff.user_id': 1 });
 shiftSchema.index({ 'assigned_staff.rest_exception_status': 1 });
 shiftSchema.index({ 'assigned_staff.hours_cap_exception_status': 1 });
 shiftSchema.index({ is_active: 1 });
+shiftSchema.index({ 'assigned_staff.draft_timetable_id': 1 });
 shiftSchema.index({ service_user_id: 1, date: 1 });
 // Supports the attendance scheduler scan (today's shifts still awaiting clock-in).
 // Keyed on clock_in_time (null) so docs predating the attendance fields still match.
@@ -294,7 +308,9 @@ shiftSchema.methods.assignStaff = function(staffId, note = '', opts = {}) {
     note,
     rest_exception_status: opts.rest_exception_status || 'none',
     hours_cap_exception_status: opts.hours_cap_exception_status || 'none',
-    hours_cap_exception_hours: opts.hours_cap_exception_hours ?? null
+    hours_cap_exception_hours: opts.hours_cap_exception_hours ?? null,
+    is_draft: opts.is_draft === true,
+    draft_timetable_id: opts.draft_timetable_id || null
   });
 
   return this;
@@ -327,7 +343,7 @@ function queueTimetableSync(changes) {
 
 // Paths that appear in a timetable snapshot. Attendance bookkeeping (reminder timestamps,
 // clock times) is deliberately excluded so the per-minute scheduler doesn't trigger rebuilds.
-const SNAPSHOT_PATH = /^(home_id|service_id|date|start_time|end_time|shift_type|required_staff_count|notes|is_active|assigned_staff(\.\d+(\.(user_id|status|assigned_at))?)?)$/;
+const SNAPSHOT_PATH = /^(home_id|service_id|date|start_time|end_time|shift_type|required_staff_count|notes|is_active|assigned_staff(\.\d+(\.(user_id|status|assigned_at|is_draft))?)?)$/;
 
 shiftSchema.post('init', function() {
   this.$locals.syncOrigin = { home_id: this.home_id, date: this.date };

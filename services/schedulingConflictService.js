@@ -366,7 +366,8 @@ class SchedulingConflictService {
 
       // Filter time-off requests for this home
       const homeTimeOffRequests = timeOffRequests.filter(
-        request => request.user_id.homes && request.user_id.homes.some(home => home.home_id.toString() === homeId)
+        request => request.user_id && request.user_id.homes &&
+          request.user_id.homes.some(home => home.home_id.toString() === String(homeId))
       );
 
       const conflicts = [];
@@ -375,10 +376,11 @@ class SchedulingConflictService {
       for (const shift of shifts) {
         for (const assignment of shift.assigned_staff) {
           const userId = assignment.user_id;
+          if (!userId) continue; // staff member since deleted
           
-          // Check time-off conflicts
+          // Check time-off conflicts (draft assignments too: they must be fixed before publishing)
           const timeOffConflicts = homeTimeOffRequests.filter(
-            request => request.user_id._id.toString() === userId.toString() &&
+            request => request.user_id._id.toString() === String(userId._id || userId) &&
                       request.start_date <= shift.date &&
                       request.end_date >= shift.date
           );

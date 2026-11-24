@@ -9,6 +9,7 @@ const SchedulingConflictService = require('./schedulingConflictService');
 const { isOneToOne, shiftDateOffset } = require('../utils/oneToOne');
 const { shiftStartDate } = require('../utils/shiftTime');
 const { paidHoursAfterBreak } = require('../utils/shiftHours');
+const { isLiveAssignment, liveAssignmentMatch } = require('../utils/draftAssignments');
 
 // A swap request expires after this many days if not answered (or sooner: when the earlier of
 // its two shifts starts).
@@ -28,8 +29,9 @@ function hasStarted(shift, now = new Date()) {
   return shiftStartDate(shift).getTime() <= now.getTime();
 }
 
+// Only published assignments can be swapped; drafts aren't anyone's shift yet.
 function assignmentOf(shift, userId) {
-  return (shift.assigned_staff || []).find((a) => idOf(a.user_id) === String(userId));
+  return (shift.assigned_staff || []).find((a) => idOf(a.user_id) === String(userId) && isLiveAssignment(a));
 }
 
 /** Calendar dates a shift touches: its date, plus the next day for an overnight shift. */
@@ -278,7 +280,7 @@ class ShiftSwapService {
   async findSwapOptions(userId, { start_date, end_date, home_id } = {}) {
     const now = new Date();
     const userShifts = await Shift.find({
-      'assigned_staff.user_id': userId,
+      assigned_staff: { $elemMatch: liveAssignmentMatch(userId) },
       is_active: true,
       shift_type: { $ne: 'one_to_one' },
       ...(start_date && end_date && { date: { $gte: start_date, $lte: end_date } }),
@@ -306,7 +308,7 @@ class ShiftSwapService {
               .filter((s) => !hasStarted(s, now))
               .filter((s) => Math.abs(paidHoursAfterBreak(s, breakPolicy) - paid) <= PAID_HOURS_TOLERANCE)
               .map(async (otherShift) => {
-                const assigned = otherShift.assigned_staff.filter((a) => a.user_id && a.user_id._id);
+                const assigned = otherShift.assigned_staff.filter((a) => a.user_id && a.user_id._id && isLiveAssignment(a));
                 const taking = await Promise.all(assigned.map((a) => this.takesSwaps(a.user_id)));
                 const colleagues = assigned.filter((_, i) => taking[i]);
                 const checks = await Promise.all(
@@ -372,7 +374,7 @@ class ShiftSwapService {
           _id: shiftId,
           is_active: true,
           $and: [
-            { assigned_staff: { $elemMatch: { user_id: from, clock_in_time: null } } },
+            { assigned_staff: { $elemMatch: { user_id: from, clock_in_time: null, is_draft: { $ne: true } } } },
             { 'assigned_staff.user_id': { $ne: to } },
           ],
         },

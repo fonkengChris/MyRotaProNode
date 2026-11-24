@@ -132,7 +132,8 @@ async function buildTimetableSnapshot(timetable) {
                 role: assignment.user_id.role,
                 type: assignment.user_id.type,
                 status: assignment.status,
-                assigned_at: assignment.assigned_at
+                assigned_at: assignment.assigned_at,
+                is_draft: assignment.is_draft === true
               })),
             notes: shift.notes,
             duration_hours: br.duration_hours,
