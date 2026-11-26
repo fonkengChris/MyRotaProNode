@@ -634,12 +634,19 @@ async function evaluateAssignment({ shift, userId, currentUser, override, capPol
   }
 
   if (shift.assigned_staff.length >= shift.required_staff_count) {
+    // Name who holds the places: a draft one is hidden from staff-facing views, so without
+    // this the shift can look empty while still being full.
+    const holders = await User.find({ _id: { $in: shift.assigned_staff.map((a) => a.user_id) } }).select('name').lean();
+    const nameOf = (id) => holders.find((u) => u._id.toString() === id.toString())?.name || 'a removed staff member';
+    const held = shift.assigned_staff
+      .map((a) => `${nameOf(a.user_id)}${isDraftAssignment(a) ? ' (unpublished draft)' : ''}`)
+      .join(', ');
     return {
       error: {
         status: 400,
         body: {
           error: 'Shift is already fully staffed',
-          message: `This shift requires ${shift.required_staff_count} staff members and already has ${shift.assigned_staff.length} assigned`
+          message: `This shift requires ${shift.required_staff_count} staff and already has ${shift.assigned_staff.length} assigned: ${held}`
         }
       }
     };
